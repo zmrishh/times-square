@@ -35,6 +35,7 @@ export type MyOrder = {
   slot_id: string;
   target: number;
   due: number;
+  video_fee?:number;
   state: string;
   mode: string;
   created_at: string;
@@ -128,6 +129,7 @@ function VideoArt({
     <div className="art video-art" style={{ aspectRatio: ratio }}>
       {!loaded && <StaticArt creative={creative} art={art} ratio={ratio} />}
       <video
+        crossOrigin="anonymous"
         ref={ref}
         muted
         loop
@@ -165,7 +167,7 @@ function VideoArt({
       )}
       {safe && (
         <div className="safe-area">
-          <span>Full-screen preview · loops silently</span>
+          <span>Full-screen preview · starts muted</span>
         </div>
       )}
     </div>

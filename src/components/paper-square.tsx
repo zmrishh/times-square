@@ -45,7 +45,9 @@ import {
   slotAspect,
   slotWidth,
 } from "@/lib/registry";
-import { nextMinimum } from "@/lib/rules";
+import { nextMinimum,videoPrice } from "@/lib/rules";
+import { DEMO_BILLBOARDS } from "@/lib/demo-billboards";
+import { setBillboardAudio,closeBillboardAudio } from "@/lib/billboard-audio";
 import type { SceneCommand } from "./square-scene";
 import { Art, api, Me, emptyMe, IconButton } from "./ui";
 import { CreativeEditor } from "./creative-editor";
@@ -68,6 +70,7 @@ type Checkout = {
   id: string;
   state: string;
   due: number;
+  video_fee?:number;
   target: number;
   mode: string;
   slot_id?: string;
@@ -128,9 +131,7 @@ export default function PaperSquare() {
   }, []);
   const joystick = useRef({ x: 0, y: 0 }),
     panelRef = useRef<HTMLElement>(null),
-    version = useRef(-1),
-    audio = useRef<AudioContext | null>(null),
-    noise = useRef<AudioBufferSourceNode | null>(null);
+    version = useRef(-1);
   const slot = SLOTS.find((s) => s.id === selected) || SLOTS[0],
     state = snapshot?.slots.find((s) => s.id === slot.id),
     hovered = SLOTS.find((s) => s.id === hover),
@@ -346,39 +347,17 @@ export default function PaperSquare() {
     };
   }, [panel, checkoutId, accountId, refresh, refreshMe]);
   const toggleSound = () => {
-    if (sound) {
-      noise.current?.stop();
-      void audio.current?.close();
-      setSound(false);
-      return;
-    }
-    const c = new AudioContext();
-    audio.current = c;
-    const buffer = c.createBuffer(1, c.sampleRate * 3, c.sampleRate),
-      d = buffer.getChannelData(0);
-    let last = 0;
-    for (let i = 0; i < d.length; i++) {
-      last = (last + Math.random() * 0.03 - 0.015) / 1.02;
-      d[i] = last;
-    }
-    const source = c.createBufferSource(),
-      gain = c.createGain();
-    source.buffer = buffer;
-    source.loop = true;
-    gain.gain.value = 0.05;
-    source.connect(gain).connect(c.destination);
-    source.start();
-    noise.current = source;
-    setSound(true);
+    void setBillboardAudio(!sound).then(enabled=>{
+      setSound(enabled);
+      if(enabled)notify('Billboard audio enabled. Walk closer to a video to hear it.');
+    }).catch(()=>notify('Audio could not start. Try the sound button again.'));
   };
   useEffect(() => {
-    const pause = () => {
-      if (document.hidden) void audio.current?.suspend();
-      else if (sound) void audio.current?.resume();
-    };
-    document.addEventListener("visibilitychange", pause);
-    return () => document.removeEventListener("visibilitychange", pause);
-  }, [sound]);
+    const pause=()=>{void setBillboardAudio(sound&&!document.hidden).catch(()=>{});};
+    document.addEventListener('visibilitychange',pause);
+    return ()=>document.removeEventListener('visibilitychange',pause);
+  },[sound]);
+  useEffect(()=>()=>{void closeBillboardAudio();},[]);
   const share = async () => {
     const url = `${location.origin}/?billboard=${slot.id}`;
     if (navigator.share)
@@ -516,6 +495,7 @@ export default function PaperSquare() {
               paused={!!panel}
               quality={quality}
               reduced={reduced}
+              sound={sound}
               command={command}
               joystick={joystick}
               onSelect={select}
@@ -597,6 +577,9 @@ export default function PaperSquare() {
             Take a little look around <ArrowRight size={19} />
           </button>
           <div className="intro-foot">
+            <button className="text-link" onClick={()=>select('tsq-026')}>See a video billboard <Play size={13}/></button>
+          </div>
+          <div className="intro-foot">
             <MousePointer2 size={13} />
             <span>Drag to look · WASD to walk · Click a billboard</span>
           </div>
@@ -668,7 +651,7 @@ export default function PaperSquare() {
         </IconButton>
         <span />
         <IconButton
-          label={sound ? "Mute ambient sound" : "Enable ambient sound"}
+          label={sound ? "Mute billboard audio" : "Enable nearby billboard audio"}
           onClick={toggleSound}
         >
           {sound ? <Volume2 size={17} /> : <VolumeX size={17} />}
@@ -805,7 +788,7 @@ export default function PaperSquare() {
                 <>
                   <Art
                     play
-                    creative={state?.creative}
+                    creative={state?.creative || (state?.available ? DEMO_BILLBOARDS[slot.id] : null)}
                     art={slot.art}
                     ratio={slotAspect(slot)}
                   />
@@ -867,12 +850,12 @@ export default function PaperSquare() {
                     </>
                   ) : (
                     <div className="empty-placement">
-                      <span className="pill">HOUSE ART · AVAILABLE</span>
+                      <span className="pill">{DEMO_BILLBOARDS[slot.id] ? 'VIDEO DEMO · AVAILABLE TO BUY' : 'HOUSE ART · AVAILABLE'}</span>
                       <h3>A big canvas for your next big thing.</h3>
                       <p>
-                        This original house artwork is keeping your spot warm.
-                        Preview your brand right here in the square.
+                        {DEMO_BILLBOARDS[slot.id] ? 'This preview clip demonstrates video advertising. It is not a paid sponsorship. Buy this placement to replace the demo with your own creative.' : 'This original house artwork is keeping your spot warm. Preview your brand right here in the square.'}
                       </p>
+                      {DEMO_BILLBOARDS[slot.id] && <button className="quiet" onClick={()=>{open(null);cmd('walk',slot.id);if(!sound)toggleSound();}}>Walk closer to hear this demo <Volume2 size={15}/></button>}
                     </div>
                   )}
                   <div className="price-box">
@@ -899,6 +882,7 @@ export default function PaperSquare() {
                       </strong>
                     </div>
                   </div>
+                  <p className="media-pricing">Image {money(nextMinimum(state?.total||0,state?.opening||slot.opening,snapshot?.preset))} · Video {money(videoPrice(nextMinimum(state?.total||0,state?.opening||slot.opening,snapshot?.preset)))} before tax. Returning credits apply at checkout.</p>
                   {state?.reserved && (
                     <div className="notice">
                       <Clock size={16} />
@@ -1125,7 +1109,7 @@ export default function PaperSquare() {
                             }}
                           >
                             <Art
-                              creative={st?.creative}
+                              creative={st?.creative || (st?.available ? DEMO_BILLBOARDS[s.id] : null)}
                               art={s.art}
                               ratio={slotAspect(s)}
                               thumbnail
@@ -1565,10 +1549,11 @@ export default function PaperSquare() {
                           <span>Your total ranking</span>
                           <strong>{money(checkout?.target || 0)}</strong>
                         </div>
+                        {Boolean(checkout?.video_fee) && <div><span>Video format fee included</span><strong>{money(checkout!.video_fee!)}</strong></div>}
                         <div className="due">
                           <span>
                             {checkout?.state === "delivered"
-                              ? "Applied payment"
+                              ? "Paid before tax"
                               : "Pay now, before tax"}
                           </span>
                           <strong>{money(checkout?.due || 0)}</strong>
@@ -1656,7 +1641,7 @@ export default function PaperSquare() {
                   </label>
                   <button className="secondary full" onClick={toggleSound}>
                     {sound ? <Volume2 size={16} /> : <VolumeX size={16} />}
-                    Ambient sound {sound ? "on" : "off"}
+                    Nearby billboard audio {sound ? "on" : "off"}
                   </button>
                   <div className="section-heading">
                     <h3>A little field guide</h3>

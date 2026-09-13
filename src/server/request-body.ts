@@ -1,6 +1,6 @@
 /** Bound reads before buffering, including chunked requests without Content-Length. */
 export async function boundedBody(
-  request: Request,
+  request: Pick<Request, 'headers' | 'body'>,
   limit: number,
 ): Promise<Uint8Array> {
   if (Number(request.headers.get("content-length") || 0) > limit)

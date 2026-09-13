@@ -128,9 +128,10 @@ export function AccountPanel({
           </span>
           <dl>
             <div>
-              <dt>Principal</dt>
+              <dt>Before tax</dt>
               <dd>{money(o.principal ?? o.due)}</dd>
             </div>
+            <div><dt>Video format fee included</dt><dd>{money(o.video_fee || 0)}</dd></div>
             <div>
               <dt>Tax</dt>
               <dd>{money(o.tax || 0)}</dd>
@@ -226,7 +227,7 @@ export function Rules({ support }: { support: string }) {
         ],
         [
           "Pay to take the lead",
-          "The default next ranking increases by the greater of $5 or 25%, rounded up to a whole dollar. An optional 2× preset affects new quotes only. A leader cannot outbid itself. There is no wallet, transferable balance, subscription, automatic rebid, withdrawal, payout, resale or prize.",
+          "The default minimum takeover ranking is the current ranking plus $10. An optional 2× admin preset affects new quotes only. Video adds a separate 50% format fee. A leader cannot outbid itself, but may pay to upgrade an image to video. There is no wallet, transferable balance, subscription, automatic rebid, withdrawal, payout, resale or prize.",
         ],
         [
           "Stay until the next big idea",
@@ -240,14 +241,14 @@ export function Rules({ support }: { support: string }) {
             <p>{body}</p>
             {i === 2 && (
               <div className="rule-example">
-                <span>A leader has $100. The next ranking is $125.</span>
+                <span>A leader has $100. The next ranking is $110.</span>
                 <p>
-                  New brand pays <b>$125</b>.<br />
-                  Returning brand with $40 pays <b>$85</b>.
+                  New image placement pays <b>$110</b>; video pays <b>$165</b>.<br />
+                  Returning image advertiser with $40 pays <b>$70</b>.
                 </p>
                 <small>
                   Only spending on that same billboard counts. Taxes do not
-                  increase ranking.
+                  increase ranking. Video costs 50% of the target ranking in addition to bidding credit, less previous eligible video fees on that same placement. Image-to-video upgrades keep the ranking unchanged and require payment of the remaining video fee. Refunds reduce bidding and format credit proportionately; refunding a video-only upgrade restores the paid image. Existing paid videos keep their original terms.
                 </small>
               </div>
             )}
@@ -704,7 +705,7 @@ export function AdminPanel({
                 })
               }
             >
-              <option value="quarter">Greater of $5 or 25%</option>
+              <option value="quarter">Current ranking + $10</option>
               <option value="double">2× the leader</option>
             </select>
           </label>

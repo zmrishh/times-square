@@ -1,6 +1,7 @@
 import { query, tx, one, job, Row } from "./db";
 import { Order } from "./auction";
 import { reconcileOrder, reconcilePayment, processRefund } from "./payments";
+import { cleanupVideos,removeVideoKeys } from './video-uploads';
 type Job = Row & {
   id: string;
   kind: string;
@@ -9,6 +10,7 @@ type Job = Row & {
 };
 export async function runJobs(limit = 20) {
   const started = Date.now();
+  await tx(db=>job(db,`media-expiry:${Math.floor(Date.now()/3600000)}`,'media-expiry',{}));
   const due = await query<Order>(
     "SELECT * FROM orders WHERE created_at<now()-interval '20 seconds' AND ((reserved=true AND (last_reconciled_at IS NULL OR last_reconciled_at<now()-interval '1 minute')) OR (mode<>'simulation' AND created_at>now()-interval '30 days' AND (last_reconciled_at IS NULL OR last_reconciled_at<now()-interval '5 minutes'))) ORDER BY last_reconciled_at NULLS FIRST LIMIT 30",
   );
@@ -50,7 +52,9 @@ export async function runJobs(limit = 20) {
         );
         continue;
       }
-      if (j.kind === "reconcile") await reconcileOrder(j.payload.orderId);
+      if(j.kind === 'media-expiry') await cleanupVideos();
+      else if(j.kind === 'media-cleanup') await removeVideoKeys([`${j.payload.attempt}.mp4`,`${j.payload.attempt}.webp`]);
+      else if (j.kind === "reconcile") await reconcileOrder(j.payload.orderId);
       else if (j.kind === "refund") await processRefund(j.payload.refundId);
       else if (j.kind === "event") {
         const event = (

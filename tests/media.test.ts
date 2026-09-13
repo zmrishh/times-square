@@ -8,7 +8,7 @@ import { SLOTS, slotAspect } from "../src/lib/registry";
 import { creativeSchema } from "../src/server/content";
 import { EMPTY_CREATIVE } from "../src/lib/registry";
 
-test("video processing preserves moving H.264 frames and removes audio and source tags", async () => {
+test("video processing preserves H.264 and AAC while removing source tags", async () => {
   const prepared = await prepareVideo(
     await readFile("tests/fixtures/loop.mp4"),
   );
@@ -20,7 +20,7 @@ test("video processing preserves moving H.264 frames and removes audio and sourc
     formats: [MP4],
   });
   try {
-    assert.equal((await input.getAudioTracks()).length, 0);
+    assert.equal((await input.getAudioTracks()).length, 1);
     assert.equal((await input.getVideoTracks()).length, 1);
     assert.equal((await input.getPrimaryVideoTrack())?.type, "video");
     assert.ok(
@@ -38,7 +38,7 @@ test("spoofed, truncated and oversized media are rejected", async () => {
     prepareVideo(Buffer.from("<svg><script>bad</script></svg>")),
     /Unsupported video/,
   );
-  await assert.rejects(prepareVideo(Buffer.alloc(4_000_001)), /up to 4 MB/);
+  await assert.rejects(prepareVideo(Buffer.alloc(50_000_001)), /up to 50 MB/);
   await assert.rejects(
     prepareVideo((await readFile("tests/fixtures/loop.mp4")).subarray(0, 160)),
     /Unsupported video/,

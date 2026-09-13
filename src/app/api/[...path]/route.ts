@@ -1,4 +1,5 @@
 import { prepareImage, prepareVideo } from "@/server/media";
+import { beginVideo,completeVideo,localVideoSource } from '@/server/video-uploads';
 import { byteRange, MAX_MEDIA_BYTES, MAX_POSTER_BYTES } from "@/lib/media";
 import { boundedBody } from "@/server/request-body";
 import { RateLimitError } from "@/server/errors";
@@ -43,9 +44,10 @@ import { runJobs } from "@/server/jobs";
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { quoteAmount } from "@/lib/rules";
+import { placementQuote } from "@/server/media-pricing";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 const json = (v: unknown, status = 200) =>
   Response.json(v, { status, headers: { "Cache-Control": "no-store" } });
 const uuid = z.string().uuid();
@@ -125,7 +127,7 @@ export async function GET(
         [a.id],
       );
       const orders = await query(
-        "SELECT o.id,o.slot_id,o.target,o.due,o.state,o.mode,o.created_at,o.expires_at,o.checkout_url,p.id AS payment_id,p.principal,p.tax,p.cash,p.refunded_cash,p.state AS payment_state,r.state AS refund_state FROM orders o LEFT JOIN payments p ON p.order_id=o.id LEFT JOIN LATERAL (SELECT state FROM refunds WHERE payment_id=p.id ORDER BY created_at DESC,id DESC LIMIT 1) r ON true WHERE o.account_id=$1 ORDER BY o.created_at DESC LIMIT 100",
+        "SELECT o.id,o.slot_id,o.target,o.due,o.video_fee,o.state,o.mode,o.created_at,o.expires_at,o.checkout_url,p.id AS payment_id,p.principal,p.tax,p.cash,p.refunded_cash,p.state AS payment_state,r.state AS refund_state FROM orders o LEFT JOIN payments p ON p.order_id=o.id LEFT JOIN LATERAL (SELECT state FROM refunds WHERE payment_id=p.id ORDER BY created_at DESC,id DESC LIMIT 1) r ON true WHERE o.account_id=$1 ORDER BY o.created_at DESC LIMIT 100",
         [a.id],
       );
       const placements = await query(
@@ -164,7 +166,7 @@ export async function GET(
     if (p[0] === "receipt" && p[1]) {
       const a = (await account())!;
       const rows = await query(
-        "SELECT o.id,o.slot_id,o.mode,o.created_at,p.principal,p.tax,p.cash,p.refunded_cash,p.state FROM orders o JOIN payments p ON p.order_id=o.id WHERE o.id=$1 AND o.account_id=$2",
+        "SELECT o.id,o.slot_id,o.mode,o.created_at,o.video_fee,o.due-o.video_fee AS ranking_contribution,p.principal,p.tax,p.cash,p.refunded_cash,p.state FROM orders o JOIN payments p ON p.order_id=o.id WHERE o.id=$1 AND o.account_id=$2",
         [uuid.parse(p[1]), a.id],
       );
       if (!rows.length) return json({ error: "Not found" }, 404);
@@ -192,8 +194,8 @@ export async function GET(
       const a = await account(false);
       const owner = await anonymous();
       const asset = (
-        await query<{ path: string; public: boolean }>(
-          `SELECT path,public FROM assets a WHERE id=$1 AND
+        await query<{ path: string; public: boolean; bytes:number }>(
+          `SELECT path,public,bytes FROM assets a WHERE id=$1 AND
            (account_id=$2 OR (owner_token=$3 AND account_id IS NULL) OR $4 OR
             (public=true AND EXISTS (
               SELECT 1 FROM creatives c JOIN brands b ON b.id=c.brand_id
@@ -205,6 +207,13 @@ export async function GET(
         )
       )[0];
       if (!asset) return new Response("Not found", { status: 404 });
+      if(asset.path.endsWith('.mp4') && req.nextUrl.searchParams.has('size')) return json({error:'Unsupported video size variant'},400);
+      if(asset.path.endsWith('.mp4') && asset.bytes>MAX_MEDIA_BYTES && process.env.SUPABASE_URL) {
+        if(byteRange(req.headers.get('range'),asset.bytes)===false) return new Response(null,{status:416,headers:{'Content-Range':`bytes */${asset.bytes}`}});
+        const {data,error}=await supabase().storage.from(process.env.SUPABASE_STORAGE_BUCKET || 'paper-assets').createSignedUrl(asset.path,900);
+        if(error||!data) throw new Error('Video unavailable. Please try again.');
+        return new Response(null,{status:307,headers:{Location:data.signedUrl,'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}});
+      }
       let bytes: Uint8Array;
       if (process.env.SUPABASE_URL) {
         const { data, error } = await supabase()
@@ -365,6 +374,18 @@ export async function POST(
     if (p[0] === "upload") {
       const a = await account(false);
       const owner = await anonymous();
+      if(p[1]==='init') {
+        const b=z.object({bytes:z.number().int().positive()}).strict().parse(await safeBody(req));
+        return json(await beginVideo(a,owner,b.bytes));
+      }
+      if(p[1]==='local-source') {await localVideoSource(req,uuid.parse(p[2]),a,owner);return json({uploaded:true});}
+      if(p[1]==='complete') {
+        const bytes=await boundedBody(req,MAX_POSTER_BYTES+10000);
+        const form=await new Response(bytes as BodyInit,{headers:{'Content-Type':req.headers.get('content-type')||''}}).formData();
+        const poster=form.get('poster');
+        if(!(poster instanceof File)) throw new Error('A preview frame is required.');
+        return json(await completeVideo(uuid.parse(form.get('id')),poster,a,owner));
+      }
       await tx((db) => rate(db, `upload:${a?.id || owner}`, 12, 3600));
       const uploadBytes = await boundedBody(req, MAX_MEDIA_BYTES + MAX_POSTER_BYTES + 10000);
       const form = await new Response(uploadBytes as BodyInit, {
@@ -536,48 +557,9 @@ export async function POST(
         })
         .strict()
         .parse(body);
-      return json(
-        await tx(async (db) => {
-          const c = await one<{ brand_id: string }>(
-            db,
-            "SELECT c.brand_id FROM creatives c JOIN brands b ON b.id=c.brand_id WHERE c.id=$1 AND b.account_id=$2 AND c.status='approved' AND NOT b.suspended",
-            [b.creativeId, a.id],
-          );
-          if (!c) throw new Error("A saved, valid creative is required.");
-          const s = await one<{
-            opening: number;
-            leader_brand: string;
-            available: boolean;
-          }>(db, "SELECT * FROM slots WHERE id=$1", [b.slotId]);
-          if (!s || !s.available) throw new Error("Placement unavailable.");
-          if (s.leader_brand === c.brand_id)
-            throw new Error(
-              "You already lead this billboard. Submit an edited creative to change its artwork.",
-            );
-          const leader = await one<{ amount: number }>(
-            db,
-            "SELECT amount FROM totals WHERE slot_id=$1 AND brand_id=$2",
-            [b.slotId, s.leader_brand],
-          );
-          const existing = await one<{ amount: number }>(
-            db,
-            "SELECT amount FROM totals WHERE slot_id=$1 AND brand_id=$2",
-            [b.slotId, c.brand_id],
-          );
-          const cfg = await one<{ value: { preset: string } }>(
-            db,
-            "SELECT value FROM settings WHERE id='global'",
-          );
-          return quoteAmount(
-            leader?.amount || 0,
-            existing?.amount || 0,
-            s.opening,
-            b.target,
-            cfg.value.preset,
-          );
-        }),
-      );
+      return json(await tx(db=>placementQuote(db,b.creativeId,a.id,b.slotId,b.target)));
     }
+
     if (p[0] === "checkout") {
       const a = (await account())!;
       if (p[1] === "simulate")
@@ -595,7 +577,7 @@ export async function POST(
           await reconcileOrder(o.id);
         const fresh = (
           await query(
-            "SELECT id,state,slot_id,due,target,mode,failure_code,cutoff_at FROM orders WHERE id=$1",
+            "SELECT id,state,slot_id,due,video_fee,target,mode,failure_code,cutoff_at FROM orders WHERE id=$1",
             [o.id],
           )
         )[0];
@@ -607,15 +589,17 @@ export async function POST(
           slotId: z.string().max(20),
           target: z.number().int().positive().optional(),
           accepted: z.literal(true),
+          expectedDue:z.number().int().positive().max(1500000),
         })
         .strict()
         .parse(body);
-      const reserved = await reserve(a, b.creativeId, b.slotId, b.target);
+      const reserved = await reserve(a, b.creativeId, b.slotId, b.target,b.expectedDue);
       const o = await startCheckout(reserved.id);
       return json({
         id: o.id,
         state: o.state,
         due: o.due,
+        video_fee:o.video_fee,
         target: o.target,
         mode: o.mode,
         url: o.checkout_url,

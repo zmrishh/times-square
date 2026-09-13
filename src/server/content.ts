@@ -4,6 +4,7 @@ import { id, one, query, tx, audit, DB } from "./db";
 import { Account } from "./auth";
 import { mode } from "./config";
 import { recompute, publish } from "./auction";
+import { videoCredit } from './media-pricing';
 const url = z
   .string()
   .max(500)
@@ -112,14 +113,19 @@ async function updateLeadingCreative(
     "SELECT id FROM slots WHERE leader_brand=$1",
     [brandId],
   );
+  const updated:string[]=[];
+  const c=await one<{data:Creative}>(db,'SELECT data FROM creatives WHERE id=$1',[creativeId]);
   for (const s of led.rows) {
+    const t=await one<{amount:number}>(db,'SELECT amount FROM totals WHERE slot_id=$1 AND brand_id=$2',[s.id,brandId]);
+    if(c.data.mode==='video' && await videoCredit(db,s.id,brandId)<Math.ceil(t.amount/2)) continue;
     await db.query(
-      "UPDATE totals SET creative_id=$3 WHERE slot_id=$1 AND brand_id=$2",
-      [s.id, brandId, creativeId],
+      "UPDATE totals SET creative_id=$3,fallback_creative_id=CASE WHEN $4 THEN $3 ELSE fallback_creative_id END WHERE slot_id=$1 AND brand_id=$2",
+      [s.id, brandId, creativeId,c.data.mode!=='video'],
     );
     await recompute(db, s.id, "creative-update");
+    updated.push(s.id);
   }
-  return led.rows.map((s) => s.id);
+  return updated;
 }
 export async function moderate(
   a: Account,

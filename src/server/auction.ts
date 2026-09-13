@@ -1,7 +1,8 @@
 import { DB, Row, tx, one, id, job, audit } from "./db";
 import { Account, rate } from "./auth";
 import { mode, required } from "./config";
-import { RULES, quoteAmount } from "../lib/rules";
+import { RULES } from "../lib/rules";
+import { placementQuote, videoCredit } from './media-pricing';
 export type Order = Row & {
   id: string;
   account_id: string;
@@ -12,6 +13,7 @@ export type Order = Row & {
   existing: number;
   target: number;
   due: number;
+  video_fee: number;
   mode: string;
   product_id: string;
   business_id: string;
@@ -50,6 +52,7 @@ export async function reserve(
   creativeId: string,
   slotId: string,
   target?: number,
+  expectedDue?:number,
 ) {
   const paymentMode = mode();
   return tx(async (db) => {
@@ -89,16 +92,13 @@ export async function reserve(
       available: boolean;
     }>(db, "SELECT * FROM slots WHERE id=$1", [slotId]);
     if (!s || !s.available) throw new Error("This placement is unavailable.");
-    if (s.leader_brand === creative.brand_id)
-      throw new Error(
-        "You already lead this billboard. Edit your creative instead.",
-      );
     const active = await one<Order>(
       db,
       "SELECT * FROM orders WHERE slot_id=$1 AND reserved=true",
       [slotId],
     );
     if (active) {
+      if(expectedDue!==undefined && active.due!==expectedDue) throw new Error('The checkout price changed. Review the updated quote before paying.');
       if (active.account_id === a.id && active.creative_id === creativeId)
         return active;
       throw new Error(
@@ -106,26 +106,12 @@ export async function reserve(
       );
     }
     await rate(db, `reservation:${a.id}`, 3, 1800);
-    const leader = await one<{ amount: number }>(
-      db,
-      "SELECT amount FROM totals WHERE slot_id=$1 AND brand_id=$2",
-      [slotId, s.leader_brand],
-    );
-    const existing = await one<{ amount: number }>(
-      db,
-      "SELECT amount FROM totals WHERE slot_id=$1 AND brand_id=$2",
-      [slotId, creative.brand_id],
-    );
-    const quote = quoteAmount(
-      leader?.amount || 0,
-      existing?.amount || 0,
-      s.opening,
-      target,
-      config.value.preset,
-    );
+    const quote = await placementQuote(db,creativeId,a.id,slotId,target);
+    if(expectedDue!==undefined && quote.due!==expectedDue) throw new Error('The checkout price changed. Review the updated quote before paying.');
+    if(quote.due === 0) throw new Error('You already lead this billboard. Edit your creative instead.');
     const orderId = id();
     await db.query(
-      `INSERT INTO orders(id,account_id,brand_id,creative_id,slot_id,slot_version,existing,target,due,rules,mode,product_id,business_id,customer_email,expires_at,cutoff_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+      `INSERT INTO orders(id,account_id,brand_id,creative_id,slot_id,slot_version,existing,target,due,rules,mode,product_id,business_id,customer_email,expires_at,cutoff_at,video_fee) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [
         orderId,
         a.id,
@@ -145,6 +131,7 @@ export async function reserve(
         a.email,
         new Date(Date.now() + RULES.reservationMs),
         new Date(Date.now() + RULES.reservationMs + RULES.graceMs),
+        quote.videoFee,
       ],
     );
     await audit(db, a.id, "quote.created", orderId, quote);
@@ -177,6 +164,15 @@ export async function recompute(
     `SELECT t.brand_id,t.creative_id,t.amount FROM totals t JOIN brands b ON b.id=t.brand_id JOIN accounts a ON a.id=b.account_id JOIN creatives c ON c.id=t.creative_id WHERE t.slot_id=$1 AND t.amount>0 AND NOT b.suspended AND NOT a.suspended AND c.status='approved' ORDER BY t.amount DESC,t.updated_at ASC,t.brand_id ASC LIMIT 1`,
     [slotId],
   );
+  if(winner) {
+    const creative=await one<{mode:string;fallback_creative_id:string;fallback_status:string}>(db,
+      `SELECT c.data->>'mode' AS mode,t.fallback_creative_id,f.status AS fallback_status FROM totals t JOIN creatives c ON c.id=t.creative_id LEFT JOIN creatives f ON f.id=t.fallback_creative_id WHERE t.slot_id=$1 AND t.brand_id=$2`,[slotId,winner.brand_id]);
+    if(creative.mode==='video' && await videoCredit(db,slotId,winner.brand_id)<Math.ceil(winner.amount/2)) {
+      // Refunding a video-only upgrade restores the paid image; it does not
+      // erase that advertiser's independent bidding credit.
+      winner.creative_id=creative.fallback_status==='approved' ? creative.fallback_creative_id : '';
+    }
+  }
   const s = await one<{
     leader_brand: string | null;
     creative_id: string | null;
@@ -184,7 +180,7 @@ export async function recompute(
   }>(db, "SELECT leader_brand,creative_id,available FROM slots WHERE id=$1", [
     slotId,
   ]);
-  const w = s.available ? winner : undefined;
+  const w = s.available && winner?.creative_id ? winner : undefined;
   // Artwork becomes public only when attached to a paid, displayed placement.
   if (w) {
     await db.query(
@@ -336,13 +332,14 @@ export async function applyEvidence(e: PaymentEvidence) {
       ]);
       await db.query(
         "INSERT INTO allocations(payment_id,slot_id,brand_id,amount) VALUES($1,$2,$3,$4)",
-        [e.id, o.slot_id, o.brand_id, o.due],
+        [e.id, o.slot_id, o.brand_id, o.due - o.video_fee],
       );
       await db.query(
         "INSERT INTO totals(slot_id,brand_id,amount,creative_id) VALUES($1,$2,$3,$4) ON CONFLICT(slot_id,brand_id) DO UPDATE SET creative_id=$4,updated_at=now()",
         [o.slot_id, o.brand_id, 0, o.creative_id],
       );
-      await recompute(db, o.slot_id, "takeover", e.id);
+      await db.query(`UPDATE totals t SET fallback_creative_id=$3 FROM creatives c WHERE t.slot_id=$1 AND t.brand_id=$2 AND c.id=$3 AND c.data->>'mode'<>'video'`,[o.slot_id,o.brand_id,o.creative_id]);
+      await recompute(db, o.slot_id, o.due === o.video_fee ? "video-upgrade" : "takeover", e.id);
       await audit(db, null, "payment.applied", e.id, {
         orderId: o.id,
         principal: o.due,
@@ -407,12 +404,12 @@ export async function adjustPayment(
       "UPDATE payments SET refunded=$2,refunded_cash=$3,disputed=$4,state=CASE WHEN $3=cash THEN 'refunded' WHEN $4 THEN 'disputed' WHEN state='disputed' THEN CASE WHEN EXISTS (SELECT 1 FROM allocations WHERE payment_id=$1) THEN 'applied' ELSE 'undelivered' END ELSE state END WHERE id=$1",
       [paymentId, principal, cash, disputed],
     );
-    await db.query("UPDATE allocations SET amount=$2 WHERE payment_id=$1", [
-      paymentId,
-      p.principal - principal,
-    ]);
     const o = await one<Order>(db, "SELECT * FROM orders WHERE id=$1", [
       p.order_id,
+    ]);
+    const ranking = o.due - o.video_fee;
+    await db.query("UPDATE allocations SET amount=$2 WHERE payment_id=$1", [
+      paymentId, Math.floor(ranking * (p.principal - principal) / p.principal),
     ]);
     if (cash === p.cash)
       await db.query(

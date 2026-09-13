@@ -1,6 +1,7 @@
 import { Slot, slotWidth } from "./registry";
 
 export const MAX_MEDIA_BYTES = 4_000_000;
+export const MAX_VIDEO_BYTES = 50_000_000;
 export const MAX_VIDEO_SECONDS = 30;
 export const MAX_POSTER_BYTES = 200_000;
 export function placementFormat(slot: Slot) {

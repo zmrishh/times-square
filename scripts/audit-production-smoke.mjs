@@ -16,8 +16,13 @@ async function context(role,width=1366) {
   const c=await browser.newContext({viewport:{width,height:900}});
   if(role) await c.addCookies([{name:"paper_session",value:sessions[role],url:canonical,httpOnly:true,secure:true,sameSite:"Lax"}]);
   await c.route(`${canonical}/**`,async route=> {
-    const response=await route.fetch({url:route.request().url().replace(canonical,base),postData:route.request().postDataBuffer() ?? undefined,timeout:45000});
-    await route.fulfill({response});
+    try {
+      const response=await route.fetch({url:route.request().url().replace(canonical,base),postData:route.request().postDataBuffer() ?? undefined,timeout:45000});
+      await route.fulfill({response});
+    } catch {
+      if(!route.request().frame().page().isClosed()) evidence.errors.push(`Proxy request failed: ${route.request().method()} ${new URL(route.request().url()).pathname}`);
+      await route.abort().catch(()=>{});
+    }
   });
   return c;
 }
@@ -101,6 +106,8 @@ try {
   expect(receipt).toHaveLength(1);
   expect(receipt[0].cash).toBe(settled.due+180);
   expect(receipt[0].principal).toBe(settled.due);
+  expect(receipt[0].video_fee).toBe(settled.video_fee);
+  expect(me.totals.find(t=>t.slot_id==='tsq-067'&&t.brand_id===me.brands[0].id).amount).toBe(settled.target);
   expect((await api(`receipt/${orderId}`,"advertiserB")).status).toBe(404);
   expect((await api("checkout/status","advertiserB",{orderId})).status).toBe(400);
   expect((await api("quote","advertiserB",{slotId:"tsq-067",creativeId:me.brands[0].creative_id})).status).toBe(400);
@@ -142,7 +149,8 @@ try {
   evidence.checks.push("Multiple refund attempts produce one payment row and show the latest refund outcome in both account and admin APIs.");
   evidence.checks.push("Admin refund initiation, worker confirmation, receipt and ranking reconciliation pass with mocked provider; no real funds moved.");
   expect(declineSlot).toBeTruthy();
-  const failedOrder=await api("checkout","advertiser",{slotId:declineSlot,creativeId:me.brands[0].creative_id,accepted:true});
+  const declineQuote=await api('quote','advertiser',{slotId:declineSlot,creativeId:me.brands[0].creative_id});
+  const failedOrder=await api("checkout","advertiser",{slotId:declineSlot,creativeId:me.brands[0].creative_id,accepted:true,expectedDue:declineQuote.data.due});
   expect(failedOrder.status,JSON.stringify(failedOrder.data)).toBe(200);
   confirmed[failedOrder.data.id]="failed";
   await writeFile(".data/audit-provider-confirmed.json",JSON.stringify(confirmed));

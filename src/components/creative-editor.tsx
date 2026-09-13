@@ -25,8 +25,10 @@ import {
   slotAspect,
   slotWidth,
 } from "@/lib/registry";
-import { placementFormat, MAX_MEDIA_BYTES } from "@/lib/media";
+import { placementFormat, MAX_MEDIA_BYTES,MAX_VIDEO_BYTES } from "@/lib/media";
 import { videoPoster } from "@/lib/video-poster";
+import { uploadVideo } from '@/lib/upload-video';
+import { nextMinimum,videoPrice } from '@/lib/rules';
 import { api, Art, Me } from "./ui";
 type Props = {
   slot: Slot;
@@ -56,6 +58,10 @@ export function CreativeEditor(p: Props) {
   const video = c.mode === "video";
   const checkoutRef = useRef<HTMLDivElement>(null);
   const uploadController = useRef<AbortController | null>(null);
+  const [retryFile,setRetryFile]=useState<File|null>(null);
+  const [uploadProgress,setUploadProgress]=useState('');
+  const publicSlot=p.snapshot?.slots.find(s=>s.id===slot.id);
+  const startingPrice=nextMinimum(publicSlot?.total || 0,publicSlot?.opening || slot.opening,p.snapshot?.preset);
   useEffect(() => () => uploadController.current?.abort(), []);
   const isLeading = Boolean(
     p.brandId &&
@@ -72,6 +78,10 @@ export function CreativeEditor(p: Props) {
       existing: number;
       target: number;
       due: number;
+      videoFee:number;
+      rankingDue:number;
+      videoCredit:number;
+      upgrade:boolean;
     } | null>(null);
   const quoteKey = `${p.approvedId}:${slot.id}:${target}`;
   const price = quote?.key === quoteKey ? quote : null;
@@ -101,7 +111,7 @@ export function CreativeEditor(p: Props) {
     return () => clearTimeout(timer);
   }, [c, slot.id, p.brandId]);
   useEffect(() => {
-    if (!p.approvedId || isLeading) return;
+    if (!p.approvedId) return;
     let live = true;
     const t = setTimeout(() => {
       void api<{
@@ -109,6 +119,10 @@ export function CreativeEditor(p: Props) {
         existing: number;
         target: number;
         due: number;
+        videoFee:number;
+        rankingDue:number;
+        videoCredit:number;
+        upgrade:boolean;
       }>("quote", {
         creativeId: p.approvedId,
         slotId: slot.id,
@@ -141,29 +155,26 @@ export function CreativeEditor(p: Props) {
       const controller = new AbortController();
       uploadController.current?.abort();
       uploadController.current = controller;
-      if (f.size > MAX_MEDIA_BYTES)
-        throw new Error("Upload an image or video up to 4 MB.");
-      const form = new FormData();
-      form.append("file", f);
-      if (video) form.append("poster", await videoPoster(f), "preview.jpg");
-      controller.signal.throwIfAborted();
-      const r = await fetch("/api/upload", {
-        method: "POST",
-        body: form,
-        signal: AbortSignal.any([
-          controller.signal,
-          AbortSignal.timeout(60000),
-        ]),
-      });
-      const d = await r
-        .json()
-        .catch(() => ({ error: "Upload failed. Try a file under 4 MB." }));
-      if (!r.ok) throw new Error(d.error);
+      setRetryFile(f);
+      if (f.size > (video?MAX_VIDEO_BYTES:MAX_MEDIA_BYTES))
+        throw new Error(video?'Upload a video up to 50 MB.':'Upload an image up to 4 MB.');
+      setUploadProgress('Preparing preview...');
+      let d:{kind:string;url:string;poster?:string};
+      if(video) d=await uploadVideo(f,await videoPoster(f),controller.signal,setUploadProgress);
+      else {
+        const form=new FormData();form.append('file',f);
+        const r=await fetch('/api/upload',{method:'POST',body:form,signal:AbortSignal.any([controller.signal,AbortSignal.timeout(60000)])});
+        const response=await r.json().catch(()=>({error:'Upload interrupted. Please retry.'}));
+        if(!r.ok)throw new Error(response.error);
+        d=response;
+      }
       if (d.kind !== (video ? "video" : "image"))
         throw new Error(
           "Choose the matching image or video option, then upload again.",
         );
       controller.signal.throwIfAborted();
+      setRetryFile(null);
+      setUploadProgress('');
       p.setCreative((latest) => ({
         ...latest,
         mode: video ? "video" : "upload",
@@ -278,6 +289,7 @@ export function CreativeEditor(p: Props) {
           <Video size={15} /> Looping video
         </button>
       </div>
+      <p className="media-pricing"><strong>Image {money(startingPrice)} · Video {money(videoPrice(startingPrice))}</strong><br />Video adds a 50% format fee. Existing bidding and video credits are applied at checkout. Before tax.</p>
       {c.mode === "template" && (
         <p className="notice">
           This is a previously saved design. Upload an image or video to replace
@@ -292,7 +304,7 @@ export function CreativeEditor(p: Props) {
         )}
         <strong>
           {busy
-            ? "Preparing your upload…"
+            ? uploadProgress || "Preparing your upload…"
             : c.image
               ? "Replace your upload"
               : video
@@ -301,11 +313,11 @@ export function CreativeEditor(p: Props) {
         </strong>
         <span>
           {video
-            ? "H.264 MP4 · up to 30 seconds · 4 MB · 60 fps"
+            ? "H.264 MP4 · up to 30 seconds · 50 MB · 60 fps"
             : "PNG, JPEG or WebP · up to 4 MB"}
           <br />
           {video
-            ? "64–1920 px per side · up to 1080p area · plays silently"
+            ? "64–1920 px per side · up to 1080p area · optional AAC audio"
             : "64–6000 px per side · up to 16 megapixels"}
         </span>
         <input
@@ -321,6 +333,8 @@ export function CreativeEditor(p: Props) {
           }}
         />
       </label>
+      {busy && uploadProgress && <div className="upload-feedback" role="status"><span>{uploadProgress}</span><button className="quiet" onClick={()=>uploadController.current?.abort()}>Cancel upload</button></div>}
+      {!busy && error && retryFile && <button className="quiet" onClick={()=>void upload(retryFile)}>Retry upload</button>}
       <Art creative={c} art={slot.art} ratio={slotAspect(slot)} safe />
       <button className="preview-link" onClick={p.onView}>
         <Building2 size={16} />
@@ -436,8 +450,8 @@ export function CreativeEditor(p: Props) {
         </div>
       )}
       <p className="fine">
-        Brand details appear when someone opens your billboard. Videos loop
-        silently; visitors who prefer reduced motion see the preview frame.
+        Brand details appear when someone opens your billboard. Videos loop;
+        audio fades in nearby after visitors enable sound. Reduced-motion visitors see the preview frame.
       </p>
       <div ref={checkoutRef}>
         {error && (
@@ -488,14 +502,14 @@ export function CreativeEditor(p: Props) {
               )}{" "}
               {me.account
                 ? isLeading
-                  ? "Save artwork"
+                  ? "Review changes"
                   : "Continue to payment"
                 : "Sign in to continue"}
               <ArrowRight size={17} />
             </button>
             <span className="save-note">{saved}</span>
           </>
-        ) : isLeading ? (
+        ) : isLeading && price?.due === 0 ? (
           <div className="notice">
             <CheckCircle2 size={18} />
             <span>
@@ -512,7 +526,7 @@ export function CreativeEditor(p: Props) {
               <CheckCircle2 size={17} />
               Your creative is ready for checkout
             </div>
-            <label className="field">
+            {!isLeading && <label className="field">
               Target ranking in USD <span>Optional higher amount</span>
               <input
                 type="number"
@@ -529,7 +543,7 @@ export function CreativeEditor(p: Props) {
                   setAccepted(false);
                 }}
               />
-            </label>
+            </label>}
             <div className="price-box">
               <div>
                 <span>Your previous applied total</span>
@@ -540,13 +554,23 @@ export function CreativeEditor(p: Props) {
                 <strong>{price ? money(price.target) : "—"}</strong>
               </div>
               <div className="due">
+                <span>Bidding credit added</span>
+                <strong>{price ? money(price.rankingDue) : "—"}</strong>
+              </div>
+              {video && <div>
+                <span>Video format fee (50%)</span>
+                <strong>{price ? money(price.videoFee) : "—"}</strong>
+              </div>}
+              {video && Boolean(price?.videoCredit) && <div><span>Previous video credit applied</span><strong>{money(price!.videoCredit)}</strong></div>}
+              <div className="due">
                 <span>You pay now</span>
                 <strong>{price ? money(price.due) : "—"}</strong>
               </div>
             </div>
             <p className="fine">
               USD before applicable tax. Dodo shows tax at checkout; it does not
-              increase ranking.
+              increase ranking. Video format fees also do not increase ranking.
+              {isLeading && ' Your paid image stays displayed until the video upgrade payment is confirmed.'}
             </p>
             <div className="purchase-terms">
               <p>
@@ -593,6 +617,7 @@ export function CreativeEditor(p: Props) {
                     slotId: slot.id,
                     target: price!.target,
                     accepted: true,
+                    expectedDue:price!.due,
                   });
                   if (o.mode === "simulation") p.onCheckout(o);
                   else if (o.url) location.assign(o.url);

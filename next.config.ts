@@ -1,4 +1,11 @@
 import type { NextConfig } from "next";
+const storageOrigins=(()=>{
+  if(!process.env.SUPABASE_URL) return '';
+  const url=new URL(process.env.SUPABASE_URL);
+  const normal=url.origin;
+  if(url.hostname.endsWith('.supabase.co')) url.hostname=url.hostname.replace('.supabase.co','.storage.supabase.co');
+  return ` ${normal} ${url.origin}`;
+})();
 
 const nextConfig: NextConfig = {
   distDir: process.env.PAPER_TEST_ORIGIN ? ".next-e2e" : ".next",
@@ -19,7 +26,7 @@ const nextConfig: NextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              `default-src 'self'; script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; frame-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`,
+              `default-src 'self'; script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'${storageOrigins}; media-src 'self' blob:${storageOrigins}; worker-src 'self' blob:; frame-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`,
           },
         ],
       },

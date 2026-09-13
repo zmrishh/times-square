@@ -54,12 +54,12 @@ test("chunked requests are bounded before buffering", async () => {
   );
 });
 test("integer ranking policy and slot-local returning contribution", () => {
-  assert.equal(nextMinimum(10000, 1000), 12500);
-  assert.equal(nextMinimum(1100, 1000), 1600);
-  assert.equal(nextMinimum(2100, 1000), 2700);
+  assert.equal(nextMinimum(10000, 1000), 11000);
+  assert.equal(nextMinimum(1100, 1000), 2100);
+  assert.equal(nextMinimum(2100, 1000), 3100);
   assert.equal(nextMinimum(10000, 1000, "double"), 20000);
   assert.deepEqual(quoteAmount(10000, 4000, 1000, 12500).due, 8500);
-  assert.equal(quoteAmount(10000, 0, 1000).due, 12500);
+  assert.equal(quoteAmount(10000, 0, 1000).due, 11000);
   for (const invalid of [NaN, Infinity, -1, 12500.1, 100, 1000001])
     assert.throws(() => quoteAmount(10000, 0, 1000, invalid));
 });

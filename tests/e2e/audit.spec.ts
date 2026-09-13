@@ -40,7 +40,8 @@ test("account draft recovery, permission boundaries, upload removal and honest e
     expect((await stranger.request.get(asset)).status()).toBe(404);
     expect((await operator.request.get(asset)).status()).toBe(200);
     const creative = await (await post(a.request,"creatives",{creative:{...EMPTY_CREATIVE,name:"Audit upload",url:"https://audit.example",mode:"upload",image:asset}})).json();
-    const checkoutResponse = await post(a.request,"checkout",{creativeId:creative.creativeId,slotId:"tsq-065",accepted:true});
+    const price=await(await post(a.request,'quote',{creativeId:creative.creativeId,slotId:'tsq-065'})).json();
+    const checkoutResponse = await post(a.request,"checkout",{creativeId:creative.creativeId,slotId:"tsq-065",accepted:true,expectedDue:price.due});
     expect(checkoutResponse.ok()).toBeTruthy();
     const checkout = await checkoutResponse.json();
     expect((await post(stranger.request,"checkout/simulate",{orderId:checkout.id})).status()).toBe(403);
@@ -66,7 +67,7 @@ for (const width of [360,390,768,1366,1920]) test(`visual and accessibility audi
   const errors: string[]=[];
   page.on("pageerror",e=>errors.push(e.message));
   await page.goto("/");
-  await expect(page.locator(".scene canvas")).toHaveAttribute("data-camera",/.+/);
+  await expect(page.locator(".scene canvas")).toHaveAttribute("data-camera",/.+/,{timeout:20000});
   await page.getByRole("button",{name:"Dismiss introduction"}).click();
   const results: unknown[]=[];
   async function capture(state: string) {

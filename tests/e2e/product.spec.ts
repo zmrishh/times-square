@@ -54,7 +54,7 @@ for (const placement of ["tsq-013", "tsq-072", "tsq-036"])
       .fill(
         "An independent design studio making thoughtful things for the internet.",
       );
-    const uploaded = page.waitForResponse(r=>r.url().endsWith("/api/upload") && r.request().method()==="POST");
+    const uploaded = page.waitForResponse(r=>r.url().endsWith(placement==='tsq-013'?"/api/upload":"/api/upload/complete") && r.request().method()==="POST");
     if (placement !== "tsq-013") {
       await page.getByRole("button",{name:"Looping video",exact:true}).click();
       await page.getByLabel("Upload video",{exact:true}).setInputFiles("tests/fixtures/loop.mp4");

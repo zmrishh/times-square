@@ -17,7 +17,7 @@ test("mobile video upload, continuous looping, wrap preview, reduced motion and 
     await page.getByRole("button",{name:"Looping video",exact:true}).click();
     const emptyAxe=await new AxeBuilder({page}).withTags(["wcag2a","wcag2aa","wcag21aa"]).analyze();
     expect(emptyAxe.violations.map(v=>v.id)).toEqual([]);
-    const response=page.waitForResponse(r=>r.url().endsWith("/api/upload")&&r.request().method()==="POST");
+    const response=page.waitForResponse(r=>r.url().endsWith("/api/upload/complete")&&r.request().method()==="POST");
     await page.getByLabel("Upload video",{exact:true}).setInputFiles("tests/fixtures/loop.mp4");
     const uploaded=await response;expect(uploaded.ok()).toBeTruthy();
     const media=await uploaded.json();

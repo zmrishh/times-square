@@ -1,9 +1,9 @@
-import { MAX_MEDIA_BYTES, MAX_VIDEO_SECONDS } from "./media";
+import { MAX_VIDEO_BYTES, MAX_VIDEO_SECONDS } from "./media";
 
 /** Decode a real first frame before sending a video. The server validates again. */
 export async function videoPoster(file: File): Promise<Blob> {
-  if (file.size > MAX_MEDIA_BYTES)
-    throw new Error("Upload a video up to 4 MB.");
+  if (file.size > MAX_VIDEO_BYTES)
+    throw new Error("Upload a video up to 50 MB.");
   const url = URL.createObjectURL(file);
   const video = document.createElement("video");
   video.muted = true;

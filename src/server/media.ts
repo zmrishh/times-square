@@ -4,12 +4,13 @@ import {
   BufferTarget,
   EncodedPacketSink,
   EncodedVideoPacketSource,
+  EncodedAudioPacketSource,
   Input,
   MP4,
   Mp4OutputFormat,
   Output,
 } from "mediabunny";
-import { MAX_MEDIA_BYTES, MAX_VIDEO_SECONDS } from "../lib/media";
+import { MAX_VIDEO_BYTES, MAX_VIDEO_SECONDS } from "../lib/media";
 
 export async function prepareImage(buffer: Buffer) {
   const signature =
@@ -50,10 +51,10 @@ export async function prepareImage(buffer: Buffer) {
     .toBuffer();
 }
 
-/** Repackage only the validated H.264 video track: no audio or container tags. */
+/** Repackage bounded H.264/AAC tracks, omitting source metadata. */
 export async function prepareVideo(buffer: Buffer) {
-  if (!buffer.length || buffer.length > MAX_MEDIA_BYTES)
-    throw new Error("Upload a video up to 4 MB.");
+  if (!buffer.length || buffer.length > MAX_VIDEO_BYTES)
+    throw new Error("Upload a video up to 50 MB.");
   const input = new Input({ source: new BufferSource(buffer), formats: [MP4] });
   let output: Output | undefined;
   try {
@@ -118,6 +119,19 @@ export async function prepareVideo(buffer: Buffer) {
       target,
     });
     output.addVideoTrack(source, { rotation });
+    const audioTracks=await input.getAudioTracks();
+    if(audioTracks.length>1) throw new Error('Unsupported video. Use at most one AAC audio track.');
+    const audioTrack=audioTracks[0];
+    let audioSource:EncodedAudioPacketSource|undefined;
+    let audioConfig:Awaited<ReturnType<typeof audioTrack.getDecoderConfig>>|undefined;
+    if(audioTrack) {
+      audioConfig=await audioTrack.getDecoderConfig();
+      const channels=await audioTrack.getNumberOfChannels(),rate=await audioTrack.getSampleRate();
+      if(await audioTrack.getCodec()!=='aac'||!audioConfig||audioConfig.codec!=='mp4a.40.2'||channels<1||channels>2||rate<8000||rate>48000)
+        throw new Error('Unsupported video audio. Export AAC-LC mono or stereo, up to 48 kHz.');
+      audioSource=new EncodedAudioPacketSource('aac');
+      output.addAudioTrack(audioSource);
+    }
     await output.start();
     let count = 0,
       bytes = 0;
@@ -126,7 +140,7 @@ export async function prepareVideo(buffer: Buffer) {
       bytes += packet.data.byteLength;
       if (
         count > 1800 ||
-        bytes > MAX_MEDIA_BYTES ||
+        bytes > MAX_VIDEO_BYTES ||
         !packet.data.length ||
         !Number.isFinite(packet.timestamp) ||
         !Number.isFinite(packet.duration) ||
@@ -145,10 +159,20 @@ export async function prepareVideo(buffer: Buffer) {
     if (count < 2 || count / (duration - start) > 61)
       throw new Error("Unsupported video. Use a moving MP4 up to 60 fps.");
     source.close();
+    if(audioSource && audioTrack && audioConfig) {
+      let audioCount=0,audioBytes=0;
+      for await(const packet of new EncodedPacketSink(audioTrack).packets()) {
+        audioCount++;audioBytes+=packet.data.length;
+        if(audioCount>1600||audioBytes>5_000_000||!Number.isFinite(packet.timestamp)||!Number.isFinite(packet.duration)||packet.duration<0||packet.timestamp-start < -1 || packet.timestamp+packet.duration-start>MAX_VIDEO_SECONDS+0.15)
+          throw new Error('Unsupported video audio. Use a complete AAC track up to 30 seconds.');
+        await audioSource.add(packet.clone({timestamp:Math.max(0,packet.timestamp-start)}),audioCount===1?{decoderConfig:audioConfig}:undefined);
+      }
+      audioSource.close();
+    }
     await output.finalize();
     const bytesOut = Buffer.from(target.buffer!);
-    if (bytesOut.length > MAX_MEDIA_BYTES)
-      throw new Error("Upload a video up to 4 MB after processing.");
+    if (bytesOut.length > MAX_VIDEO_BYTES)
+      throw new Error("Upload a video up to 50 MB after processing.");
     return { bytes: bytesOut, width, height, duration: duration - start };
   } catch (e) {
     await output?.cancel().catch(() => {});

@@ -24,6 +24,7 @@ import {
 } from "@/lib/registry";
 import { renderCreative } from "@/lib/creative-renderer";
 import { useBillboardVideo } from "./billboard-video";
+import { DEMO_BILLBOARDS } from '@/lib/demo-billboards';
 import { BUILDINGS, canWalk, type Building } from "@/lib/scene-layout";
 
 const INK = "#2e4961",
@@ -180,6 +181,7 @@ function Billboard({
   onHover,
   reduced,
   paused,
+  sound,
 }: {
   slot: Slot;
   state?: PublicSlot;
@@ -189,8 +191,10 @@ function Billboard({
   onHover: (id: string | null) => void;
   reduced: boolean;
   paused: boolean;
+  sound:boolean;
 }) {
-  const videoTexture = useBillboardVideo(slot, preview || state?.creative || undefined, paused, reduced);
+  const displayCreative=preview || state?.creative || (state?.available && !state.brandId ? DEMO_BILLBOARDS[slot.id] : undefined);
+  const videoTexture = useBillboardVideo(slot, displayCreative, paused, reduced,sound);
   const [tex, setTex] = useState<THREE.CanvasTexture | null>(null);
   const [resolution, setResolution] = useState(256);
   const sampleAt = useRef(slot.art * 0.017);
@@ -251,7 +255,7 @@ function Billboard({
     const width = slotWidth(slot);
     void renderCreative(
       c,
-      preview || state?.creative || null,
+      displayCreative || null,
       slot.art,
       Math.max(1, Math.round(resolution * Math.min(1, width / s.height))),
       Math.max(1, Math.round(resolution * Math.min(1, s.height / width))),
@@ -267,7 +271,7 @@ function Billboard({
     return () => {
       active = false;
     };
-  }, [slot, preview, state?.creative, resolution]);
+  }, [slot, displayCreative, resolution]);
   // Keep the current bitmap alive until the replacement material commits.
   useEffect(
     () => () => {
@@ -694,6 +698,7 @@ type Props = {
   selected: string | null;
   preview?: Creative;
   paused: boolean;
+  sound:boolean;
   quality: string;
   reduced: boolean;
   command: SceneCommand;
@@ -902,13 +907,13 @@ function Controls({
       gl.domElement.dataset.renderCalls = String(gl.info.render.calls);
       gl.domElement.dataset.triangles = String(gl.info.render.triangles);
       gl.domElement.dataset.textures = String(gl.info.memory.textures);
-      const videos: {slot:string;time:number;paused:boolean;loop:boolean;texture:string}[] = [];
+      const videos: {slot:string;time:number;paused:boolean;loop:boolean;texture:string;audioGain:number;audioRms:number;distance:number}[] = [];
       scene.traverse(object=>{
         if (!(object instanceof THREE.Mesh) || !object.userData.slotId) return;
         const material=object.material;
         if (material instanceof THREE.MeshBasicMaterial && material.map instanceof THREE.VideoTexture) {
           const video=material.map.image as HTMLVideoElement;
-          videos.push({slot:object.userData.slotId,time:video.currentTime,paused:video.paused,loop:video.loop,texture:material.map.uuid});
+          videos.push({slot:object.userData.slotId,time:video.currentTime,paused:video.paused,loop:video.loop,texture:material.map.uuid,audioGain:Number(video.dataset.audioGain||0),audioRms:Number(video.dataset.audioRms||0),distance:Number(video.dataset.audioDistance||999)});
         }
       });
       gl.domElement.dataset.videos=JSON.stringify(videos);
@@ -1089,6 +1094,7 @@ export default function SquareScene(props: Props) {
           onHover={props.onHover}
           reduced={props.reduced}
           paused={props.paused}
+          sound={props.sound}
         />
       ))}
       <BillboardStructure />

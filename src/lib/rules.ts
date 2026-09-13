@@ -1,12 +1,19 @@
 export const RULES = {
-  version: "2026-09-v1",
-  minimumIncrement: 500,
-  percent: 25,
+  version: "2026-09-video-v2",
+  minimumIncrement: 1000,
+  percent: 0,
   preset: "quarter" as "quarter" | "double",
   maxTarget: 1000000,
   reservationMs: 10 * 60 * 1000,
   graceMs: 2 * 60 * 1000,
 };
+export const VIDEO_PREMIUM_PERCENT = 50;
+export const videoPrice = (ranking: number) => ranking + Math.ceil(ranking / 2);
+export function mediaPrice(base: ReturnType<typeof quoteAmount>, video: boolean, credit = 0) {
+  if (!Number.isSafeInteger(credit) || credit < 0) throw new Error("Invalid video credit.");
+  const videoFee = video ? Math.max(0, Math.ceil(base.target / 2) - credit) : 0;
+  return { ...base, rankingDue: base.due, videoFee, videoCredit: credit, due: base.due + videoFee };
+}
 export function nextMinimum(
   leader: number,
   opening: number,
@@ -17,10 +24,7 @@ export function nextMinimum(
     : leader +
         (preset === "double"
           ? leader
-          : Math.max(
-              RULES.minimumIncrement,
-              Math.ceil((leader * RULES.percent) / 100 / 100) * 100,
-            ));
+          : RULES.minimumIncrement);
 }
 export function quoteAmount(
   leader: number,
