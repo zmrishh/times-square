@@ -572,16 +572,16 @@ export default function PaperSquare() {
           >
             <X size={15} />
           </button>
-          <span className="eyebrow">THE INTERNET, OUT IN THE OPEN.</span>
+          <span className="eyebrow">BIG IDEAS. HAPPY ACCIDENTS.</span>
           <h1>
-            Big city.
+            Small brands.
             <br />
-            <em>Little internet.</em>
+            <em>Big presence.</em>
           </h1>
           <p>
-            A little Times Square for the internet.
+            Take a stroll. Find your next favorite.
             <br />
-            Explore the billboards. Put your brand on one.
+            A little Times Square for the internet.
           </p>
           <button
             className="intro-link"
@@ -590,7 +590,7 @@ export default function PaperSquare() {
               cmd("tour");
             }}
           >
-            Take a little look around <ArrowRight size={17} />
+            Take a little look around <ArrowRight size={19} />
           </button>
           <div className="intro-foot">
             <MousePointer2 size={13} />
