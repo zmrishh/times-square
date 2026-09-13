@@ -40,7 +40,7 @@
 .video-art .safe-area {
   bottom: 48px;
 }
-.video-art .safe-area span { background: #183b4b; color: #fffdf4; }
+.safe-area span { background: #183b4b; color: #fffdf4; }
 .video-start:hover:not(:disabled) { background: #245165; color: #fffdf4; }
 .video-start {
   position: absolute;
