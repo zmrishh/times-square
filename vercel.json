@@ -1,0 +1,3 @@
+{
+  "buildCommand": "node scripts/release-video-migration.mjs && npm run build"
+}

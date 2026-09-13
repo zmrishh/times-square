@@ -19,7 +19,8 @@ export async function beginVideo(a:Account|null,owner:string,size:number) {
   if(process.env.SUPABASE_URL) {
     const {data,error}=await bucket().createSignedUploadUrl(sourceKey(uploadId),{upsert:false});
     if(error||!data) throw new Error('Video storage unavailable. Please try again.');
-    const endpoint=new URL('/storage/v1/upload/resumable',process.env.SUPABASE_URL);
+    // Signed tokens use Supabase's /sign route; the normal TUS route requires a user JWT.
+    const endpoint=new URL('/storage/v1/upload/resumable/sign',process.env.SUPABASE_URL);
     if(endpoint.hostname.endsWith('.supabase.co')) endpoint.hostname=endpoint.hostname.replace('.supabase.co','.storage.supabase.co');
     return {id:uploadId,endpoint:endpoint.href,token:data.token,bucket:process.env.SUPABASE_STORAGE_BUCKET || 'paper-assets',path:sourceKey(uploadId)};
   }
