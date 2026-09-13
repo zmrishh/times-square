@@ -1,0 +1,16 @@
+services:
+  web:
+    build: .
+    env_file: .env.production
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+  worker:
+    build: .
+    env_file: .env.production
+    environment:
+      WORKER_ORIGIN: http://web:3000
+    command: ["node", "scripts/worker.mjs"]
+    restart: unless-stopped
+    depends_on:
+      - web

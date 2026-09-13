@@ -1,0 +1,8 @@
+.data
+.env*
+artifacts
+test-results
+playwright-report
+.next-e2e
+scripts/audit-*
+*.log

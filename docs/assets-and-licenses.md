@@ -1,0 +1,7 @@
+# Assets and dependencies
+
+The city geometry, facade textures, house billboard compositions, paper grain, map, and social-card drawing are original procedural code in `src/components/square-scene.tsx`, `src/lib/creative-renderer.ts`, `src/lib/registry.ts`, and the OG route. No downloaded city models, advertising logos, street photographs, proprietary application code, or reference-site assets are shipped as scenery. Geographic names identify the interpretive location; no affiliation is represented.
+
+Typography uses installed Arial and Georgia/system fallbacks; no font binaries are redistributed. Lucide icons use its ISC license. Three.js, React, React Three Fiber, Drei, Next.js, Tailwind, Zod, Sharp, node-postgres, PGlite and Supabase retain their upstream package licenses. The Dodo SDK retains its Apache-2.0 license. Exact versions and transitive dependencies are recorded in `package-lock.json`; package distributions include their license notices. The source project does not declare a new public distribution license.
+
+Advertiser images are user-supplied and subject to moderation and the advertiser's rights. Original uploads are decoded and discarded; only stripped, resized WebP derivatives are retained. Draft and checkout-ready derivatives stay private until the exact creative is displayed on a paid placement. Reference captures under `artifacts/references` are local inspection material, excluded from the application and Docker build; source URLs and approximations are listed in `scene-plan.md`.

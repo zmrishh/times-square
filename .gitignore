@@ -1,6 +1,11 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
+.data/
+.env.local
+test-results/
+playwright-report/
+.next-dev*.log
 /node_modules
 /.pnp
 .pnp.*
@@ -12,9 +17,11 @@
 
 # testing
 /coverage
+/artifacts/
 
 # next.js
 /.next/
+/.next-e2e/
 /out/
 
 # production
@@ -32,6 +39,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
