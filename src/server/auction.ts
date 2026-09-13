@@ -188,7 +188,7 @@ export async function recompute(
   // Artwork becomes public only when attached to a paid, displayed placement.
   if (w) {
     await db.query(
-      `UPDATE assets SET public=true WHERE id IN (SELECT split_part(c.data->>'logo','/',4) FROM creatives c WHERE c.id=$1 UNION SELECT split_part(c.data->>'image','/',4) FROM creatives c WHERE c.id=$1)`,
+      `UPDATE assets SET public=true WHERE id IN (SELECT split_part(c.data->>'logo','/',4) FROM creatives c WHERE c.id=$1 UNION SELECT split_part(c.data->>'image','/',4) FROM creatives c WHERE c.id=$1 UNION SELECT split_part(c.data->>'poster','/',4) FROM creatives c WHERE c.id=$1)`,
       [w.creative_id],
     );
   }

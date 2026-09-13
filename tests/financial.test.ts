@@ -8,6 +8,8 @@ import { boundedBody } from "../src/server/request-body";
 import { quoteAmount, nextMinimum } from "../src/lib/rules";
 import { origin, validateProduction } from "../src/server/config";
 import { EMPTY_CREATIVE } from "../src/lib/registry";
+// Existing purchased templates remain supported; new UI creatives use uploads.
+const LEGACY_CREATIVE = {...EMPTY_CREATIVE, mode: "template" as const, headline: "Existing advertiser creative"};
 process.env.PAPER_DATA_DIR = ":memory:";
 process.env.PAYMENT_MODE = "simulation";
 import { query, id, closeDatabase, database } from "../src/server/db";
@@ -166,7 +168,7 @@ test("database integration: reservations, evidence, refunds and access boundarie
   const creatives: Awaited<ReturnType<typeof submitCreative>>[] = [];
   for (let i = 1; i < 6; i++) {
     const c = await submitCreative(users[i], {
-      ...EMPTY_CREATIVE,
+      ...LEGACY_CREATIVE,
       name: `Brand ${i}`,
       url: `https://brand${i}.example`,
     });
@@ -214,7 +216,7 @@ test("database integration: reservations, evidence, refunds and access boundarie
         () =>
           submitCreative(
             users[2],
-            { ...EMPTY_CREATIVE, name: "Other", url: "https://other.example" },
+            { ...LEGACY_CREATIVE, name: "Other", url: "https://other.example" },
             creatives[0].brandId,
           ),
         /do not own/,
@@ -222,14 +224,14 @@ test("database integration: reservations, evidence, refunds and access boundarie
       await assert.rejects(
         () =>
           submitCreative(users[1], {
-            ...EMPTY_CREATIVE,
+            ...LEGACY_CREATIVE,
             name: "Invalid",
             url: "javascript:alert(1)",
           }),
         /HTTPS/,
       );
       const pending = await submitCreative(users[1], {
-        ...EMPTY_CREATIVE,
+        ...LEGACY_CREATIVE,
         name: "Pending",
         url: "https://pending.example",
       });
@@ -471,7 +473,7 @@ test("database integration: reservations, evidence, refunds and access boundarie
       const edit = await submitCreative(
         users[1],
         {
-          ...EMPTY_CREATIVE,
+          ...LEGACY_CREATIVE,
           name: "Edited Brand 1",
           url: "https://brand1.example",
         },
@@ -489,7 +491,7 @@ test("database integration: reservations, evidence, refunds and access boundarie
       const leaderEdit = await submitCreative(
         users[2],
         {
-          ...EMPTY_CREATIVE,
+          ...LEGACY_CREATIVE,
           name: "Updated leader",
           url: "https://brand2.example",
         },

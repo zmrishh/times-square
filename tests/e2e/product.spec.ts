@@ -22,7 +22,7 @@ async function login(request: APIRequestContext, email: string) {
   expect(sent.localCode).toBeTruthy();
   await post(request, "auth/verify", { email, code: sent.localCode });
 }
-for (const placement of ["tsq-013", "tsq-072"])
+for (const placement of ["tsq-013", "tsq-072", "tsq-036"])
   test(`draft → email → direct payment → second visitor → refund (${placement})`, async ({
     page,
     browser,
@@ -54,29 +54,21 @@ for (const placement of ["tsq-013", "tsq-072"])
       .fill(
         "An independent design studio making thoughtful things for the internet.",
       );
-    await page
-      .getByLabel("Headline", { exact: false })
-      .fill("Ideas worth\nlooking up for.");
-    if (placement === "tsq-072") {
-      await page.getByLabel("Headline", { exact: false }).fill("");
-      await page
-        .getByRole("button", { name: "Upload artwork", exact: true })
-        .click();
-      const image = await sharp({
-        create: { width: 768, height: 384, channels: 3, background: "#e94b30" },
-      })
-        .png()
-        .toBuffer();
-      const uploaded = page.waitForResponse(
-        (r) =>
-          r.url().endsWith("/api/upload") && r.request().method() === "POST",
-      );
-      await page.getByLabel("Upload artwork", { exact: true }).setInputFiles({
-        name: "direct-checkout.png",
-        mimeType: "image/png",
-        buffer: image,
-      });
-      expect((await uploaded).ok()).toBeTruthy();
+    const uploaded = page.waitForResponse(r=>r.url().endsWith("/api/upload") && r.request().method()==="POST");
+    if (placement !== "tsq-013") {
+      await page.getByRole("button",{name:"Looping video",exact:true}).click();
+      await page.getByLabel("Upload video",{exact:true}).setInputFiles("tests/fixtures/loop.mp4");
+    } else {
+      const image = await sharp({create:{width:768,height:384,channels:3,background:"#e94b30"}}).png().toBuffer();
+      await page.getByLabel("Upload artwork",{exact:true}).setInputFiles({name:"artwork.png",mimeType:"image/png",buffer:image});
+    }
+    const uploadedResponse=await uploaded;
+    expect(uploadedResponse.ok()).toBeTruthy();
+    const media=await uploadedResponse.json();
+    expect(media.kind).toBe(placement!=="tsq-013"?"video":"image");
+    if(placement!=="tsq-013") {
+      await expect(page.locator(".video-art video")).toHaveJSProperty("loop",true);
+      await expect.poll(()=>page.locator(".video-art video").evaluate((v:HTMLVideoElement)=>v.currentTime)).toBeGreaterThan(0);
     }
     await page.getByRole("button", { name: "Sign in to continue" }).click();
     await page
@@ -106,6 +98,8 @@ for (const placement of ["tsq-013", "tsq-072"])
     expect(brand.status).toBe("approved");
     if (brand.data.image)
       expect((await observer.request.get(brand.data.image)).status()).toBe(404);
+    if (brand.data.poster)
+      expect((await observer.request.get(brand.data.poster)).status()).toBe(404);
     await expect(
       page.getByText("Your creative is ready for checkout"),
     ).toBeVisible();
@@ -144,6 +138,21 @@ for (const placement of ["tsq-013", "tsq-072"])
         timeout: 15000,
       },
     );
+    if (placement !== "tsq-013") {
+      expect((await observer.request.get(brand.data.poster)).status()).toBe(200);
+      const range=await observer.request.get(brand.data.image,{headers:{Range:"bytes=0-99"}});
+      expect(range.status()).toBe(206);expect((await range.body()).length).toBe(100);
+      expect(range.headers()["content-type"]).toBe("video/mp4");
+      await other.getByRole("button",{name:"Close panel",exact:true}).click();
+      await expect.poll(async()=>JSON.parse(await other.locator(".scene canvas").getAttribute("data-videos") || "[]").some((v:{slot:string;time:number;paused:boolean;loop:boolean})=>v.slot===placement && v.time>0 && !v.paused && v.loop),{timeout:20000}).toBe(true);
+      const playing=JSON.parse(await other.locator(".scene canvas").getAttribute("data-videos") || "[]").filter((v:{slot:string})=>v.slot===placement);
+      expect(playing.length).toBe(placement === "tsq-036" ? 2 : 1);
+      expect(new Set(playing.map((v:{texture:string})=>v.texture)).size).toBe(1);
+      await other.screenshot({path:`artifacts/video-playing-${placement}.png`});
+      await other.emulateMedia({reducedMotion:"reduce"});
+      await expect.poll(async()=>JSON.parse(await other.locator(".scene canvas").getAttribute("data-videos") || "[]").length).toBe(0);
+      await other.emulateMedia({reducedMotion:"no-preference"});
+    }
     await page.screenshot({ path: "artifacts/payment-delivered.png" });
     await other.screenshot({ path: "artifacts/second-visitor-takeover.png" });
     const receipt = await page.request.get(`/api/receipt/${orderId}`);

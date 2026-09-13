@@ -1070,13 +1070,14 @@ export type Creative = {
   description: string;
   category: string;
   social: string;
-  mode: "template" | "upload";
+  mode: "template" | "upload" | "video";
   bg: string;
   fg: string;
   headline: string;
   subline: string;
   logo: string;
   image: string;
+  poster?: string;
   fit: "contain" | "cover";
   cropX: number;
   cropY: number;
@@ -1088,14 +1089,14 @@ export const EMPTY_CREATIVE: Creative = {
   description: "",
   category: "Technology",
   social: "",
-  mode: "template",
-  bg: "#ec5034",
+  mode: "upload",
+  bg: "#f7f3e8",
   fg: "#fff7e7",
-  headline: "Your next\nbig idea.",
-  subline: "MADE TO BE SEEN",
+  headline: "",
+  subline: "",
   logo: "",
   image: "",
-  fit: "contain",
+  fit: "cover",
   cropX: 50,
   cropY: 50,
 };

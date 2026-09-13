@@ -36,13 +36,14 @@ export const creativeSchema = z
       "Other",
     ]),
     social: z.union([z.literal(""), url]),
-    mode: z.enum(["template", "upload"]),
+    mode: z.enum(["template", "upload", "video"]),
     bg: z.string().regex(/^#[a-f0-9]{6}$/i),
     fg: z.string().regex(/^#[a-f0-9]{6}$/i),
     headline: z.string().trim().max(90),
     subline: z.string().max(80),
     logo: asset,
     image: asset,
+    poster: asset.optional(),
     fit: z.enum(["contain", "cover"]),
     cropX: z.number().min(0).max(100),
     cropY: z.number().min(0).max(100),
@@ -58,8 +59,10 @@ export async function submitCreative(
   brandId?: string,
 ) {
   const c = creativeSchema.parse(data);
-  if (c.mode === "upload" && !c.image)
+  if ((c.mode === "upload" || c.mode === "video") && !c.image)
     throw new Error("Upload your creative first.");
+  if (c.mode === "video" && (!c.poster || c.poster === c.image || c.logo || c.fit !== "cover"))
+    throw new Error("Upload a video preview and use fill-screen placement.");
   return tx(async (db) => {
     const active = await one(db, "SELECT id FROM accounts WHERE id=$1 AND NOT suspended", [a.id]);
     if (!active) throw new Error("Account suspended or unavailable.");
@@ -77,13 +80,16 @@ export async function submitCreative(
         [brandId, a.id, c.name],
       );
     }
-    for (const assetPath of [c.logo, c.image].filter(Boolean)) {
-      const own = await one(
+    for (const assetPath of [c.logo, c.image, c.poster].filter((s): s is string => Boolean(s))) {
+      const own = await one<{path: string}>(
         db,
-        "SELECT id FROM assets WHERE id=$1 AND account_id=$2",
+        "SELECT path FROM assets WHERE id=$1 AND account_id=$2",
         [assetPath.split("/").pop(), a.id],
       );
       if (!own) throw new Error("The image does not belong to your account.");
+      const expectedVideo = c.mode === "video" && assetPath === c.image;
+      if (expectedVideo ? !own.path.endsWith(".mp4") : !own.path.endsWith(".webp"))
+        throw new Error("Unsupported media for this creative. Upload the matching image or video.");
     }
     const creativeId = id();
     // Retain the existing status vocabulary for historical orders. Validated

@@ -1,5 +1,68 @@
 /* Paper Square's presentation layer. Interaction and commercial state live in
    the existing components; these styles give the paper city a brighter voice. */
+.media-spec {
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+  margin: 18px 0;
+  background: #eff2e3;
+  border: 1px solid #d9ded4;
+  border-radius: 10px;
+}
+.media-spec > strong {
+  font-size: 27px;
+  letter-spacing: -0.04em;
+}
+.media-spec small {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.media-spec > span:not(.eyebrow),
+.media-spec p {
+  font-size: 12px;
+}
+.upload-busy {
+  opacity: 0.7;
+  pointer-events: none;
+}
+.video-art > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+.video-art > .art {
+  position: absolute;
+  inset: 0;
+}
+.video-art .safe-area {
+  bottom: 48px;
+}
+.video-art .safe-area span { background: #183b4b; color: #fffdf4; }
+.video-start:hover:not(:disabled) { background: #245165; color: #fffdf4; }
+.video-start {
+  position: absolute;
+  inset: auto 50% 50% auto;
+  transform: translate(50%, 50%);
+  padding: 12px 18px;
+  min-height: 44px;
+  border-radius: 8px;
+  background: #183b4b;
+  color: #fffdf4;
+  white-space: nowrap;
+}
+.video-error {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  padding: 8px;
+  background: #fff8ed;
+  color: #8b2e18;
+  font-size: 12px;
+}
 :root {
   --font-sans: var(--font-geist), Arial, sans-serif;
   --font-label: var(--font-geist-mono), monospace;
@@ -392,6 +455,7 @@ a:focus-visible {
   color: #faf8f0;
   box-shadow: 0 2px 4px #183b4b18;
 }
+.segmented .chosen:hover:not(:disabled) { background: var(--ink); color: #faf8f0; }
 .segmented .chosen span {
   color: var(--citrus);
 }

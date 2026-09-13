@@ -92,6 +92,10 @@ for (const width of [360,390,768,1366,1920]) test(`visual and accessibility audi
   await page.getByLabel("Brand name",{exact:false}).fill("A remarkably long independent creative studio");
   await page.getByLabel("Website",{exact:false}).fill("https://an-exceptionally-long-domain-name.example/creative-campaign");
   await capture("editor");
+  const image=await sharp({create:{width:256,height:128,channels:3,background:"#f45632"}}).png().toBuffer();
+  const upload=page.waitForResponse(r=>r.url().endsWith("/api/upload") && r.request().method()==="POST");
+  await page.getByLabel("Upload artwork",{exact:true}).setInputFiles({name:"audit-art.png",mimeType:"image/png",buffer:image});
+  expect((await upload).ok()).toBeTruthy();
   await page.getByRole("button",{name:"Sign in to continue"}).click();
   await capture("auth");
   await writeFile(`artifacts/audit/${width}-accessibility.json`,JSON.stringify({errors,results},null,2));

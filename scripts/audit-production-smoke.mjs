@@ -16,7 +16,7 @@ async function context(role,width=1366) {
   const c=await browser.newContext({viewport:{width,height:900}});
   if(role) await c.addCookies([{name:"paper_session",value:sessions[role],url:canonical,httpOnly:true,secure:true,sameSite:"Lax"}]);
   await c.route(`${canonical}/**`,async route=> {
-    const response=await route.fetch({url:route.request().url().replace(canonical,base),timeout:45000});
+    const response=await route.fetch({url:route.request().url().replace(canonical,base),postData:route.request().postDataBuffer() ?? undefined,timeout:45000});
     await route.fulfill({response});
   });
   return c;
@@ -40,14 +40,27 @@ try {
   expect((await api("draft","advertiser",{}, {Origin:"https://attacker.example"})).status).toBe(400);
   expect((await api("auth/send",null,{email:"fixture@example.com"})).data.localCode).toBeUndefined();
   evidence.checks.push("Production rejects simulator, anonymous admin and foreign Origin; no local OTP disclosure; 72 slots and health available.");
+  // Multipart bytes go directly to the production API. Browser multipart and
+  // first-frame extraction are covered by media.spec.ts; CDP's cross-host
+  // proxy cannot reliably forward file-backed request bodies.
+  const uploadForm=new FormData();
+  uploadForm.append("file",new Blob([await readFile("tests/fixtures/loop.mp4")],{type:"video/mp4"}),"loop.mp4");
+  uploadForm.append("poster",new Blob([await readFile("tests/fixtures/loop-poster.png")],{type:"image/png"}),"poster.png");
+  const uploadedResponse=await fetch(`${base}/api/upload`,{method:"POST",headers:{Origin:canonical,Cookie:`paper_session=${sessions.advertiser}`},body:uploadForm});
+  const uploadedMedia=await uploadedResponse.json();
+  expect(uploadedResponse.ok,JSON.stringify(uploadedMedia)).toBeTruthy();
+  expect(uploadedMedia.kind).toBe("video");
+  expect((await fetch(base+uploadedMedia.url)).status).toBe(404);
+  expect((await fetch(base+uploadedMedia.poster)).status).toBe(404);
+  const creative={name:`Production audit ${Date.now()}`,url:"https://audit.example",tagline:"",description:"",category:"Technology",social:"",mode:"video",bg:"#ffffff",fg:"#183b4b",headline:"",subline:"",logo:"",image:uploadedMedia.url,poster:uploadedMedia.poster,fit:"cover",cropX:50,cropY:50};
+  expect((await api("draft","advertiser",{creative,slotId:"tsq-067"})).status).toBe(200);
   const c=await context("advertiser");
   let page=await c.newPage();
   page.on("pageerror",e=>evidence.errors.push(e.message));
-  await page.goto(`${canonical}/?billboard=tsq-067`);
+  await page.goto(`${canonical}/?billboard=tsq-067`,{waitUntil:"networkidle"});
   await page.getByRole("button",{name:/Claim this billboard|Outbid this brand/}).click();
-  await page.getByLabel("Brand name",{exact:false}).fill(`Production audit ${Date.now()}`);
-  await page.getByLabel("Website",{exact:false}).fill("https://audit.example");
-  await page.getByLabel("Headline",{exact:false}).fill("Production boundary test");
+  await expect(page.getByLabel("Brand name",{exact:false})).toHaveValue(creative.name);
+  await expect(page.getByRole("button",{name:"Looping video",exact:true})).toHaveAttribute("aria-pressed","true");
   await page.getByRole("button",{name:"Continue to payment",exact:true}).click();
   await expect(page.getByText("Your creative is ready for checkout",{exact:true})).toBeVisible();
   await page.getByRole("checkbox").check();
@@ -76,6 +89,12 @@ try {
   expect(jobs.status).toBe(200);
   const settled=(await api("checkout/status","advertiser",{orderId})).data;
   expect(settled.state).toBe("delivered");
+  const videoRange=await fetch(base+uploadedMedia.url,{headers:{Range:"bytes=0-99"}});
+  expect(videoRange.status).toBe(206);
+  expect(videoRange.headers.get("content-type")).toBe("video/mp4");
+  expect((await videoRange.arrayBuffer()).byteLength).toBe(100);
+  expect((await fetch(base+uploadedMedia.poster)).status).toBe(200);
+  evidence.checks.push("Real MP4 bytes uploaded through the production route to isolated Supabase HTTP storage fixtures; video/poster private before settlement and public range playback after authenticated payment evidence.");
   const me=(await api("me","advertiser")).data;
   expect(me.orders.filter(o=>o.id===orderId)).toHaveLength(1);
   const receipt=(await api(`receipt/${orderId}`,"advertiser")).data.records;
@@ -109,8 +128,12 @@ try {
   // An earlier failed refund must not duplicate the payment or hide its latest outcome.
   const fixtureDb=new pg.Client({connectionString:"postgresql://audit:audit@127.0.0.1:54329/audit?sslmode=disable"});
   await fixtureDb.connect();
+  let declineSlot;
   try {
     await fixtureDb.query("INSERT INTO refunds(id,payment_id,state,reason,created_at) VALUES($1,$2,'failed','Earlier isolated fixture attempt',now()-interval '1 hour')",[randomUUID(),paymentId]);
+    // Repeated runs may still have a terminal payment inside its reservation
+    // grace period. Choose an unused fixture placement without changing it.
+    declineSlot=(await fixtureDb.query("SELECT s.id FROM slots s WHERE s.available=true AND s.leader_brand IS NULL AND s.id <> 'tsq-067' AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.slot_id=s.id AND o.reserved=true) ORDER BY s.id DESC LIMIT 1")).rows[0]?.id;
   } finally {await fixtureDb.end();}
   const accountPayments=(await api("me","advertiser")).data.orders.filter(o=>o.payment_id===paymentId);
   const adminPayments=(await api("admin","admin")).data.payments.filter(p=>p.id===paymentId);
@@ -118,8 +141,9 @@ try {
   expect(accountPayments[0].refund_state).toBe("succeeded");expect(adminPayments[0].refund_state).toBe("succeeded");
   evidence.checks.push("Multiple refund attempts produce one payment row and show the latest refund outcome in both account and admin APIs.");
   evidence.checks.push("Admin refund initiation, worker confirmation, receipt and ranking reconciliation pass with mocked provider; no real funds moved.");
-  const failedOrder=await api("checkout","advertiser",{slotId:"tsq-068",creativeId:me.brands[0].creative_id,accepted:true});
-  expect(failedOrder.status).toBe(200);
+  expect(declineSlot).toBeTruthy();
+  const failedOrder=await api("checkout","advertiser",{slotId:declineSlot,creativeId:me.brands[0].creative_id,accepted:true});
+  expect(failedOrder.status,JSON.stringify(failedOrder.data)).toBe(200);
   confirmed[failedOrder.data.id]="failed";
   await writeFile(".data/audit-provider-confirmed.json",JSON.stringify(confirmed));
   expect((await api("checkout/status","advertiser",{orderId:failedOrder.data.id})).data.failure_code).toBe("DO_NOT_HONOR");
@@ -131,5 +155,5 @@ try {
   evidence.paymentId=paymentId;
   expect(evidence.errors).toEqual([]);
   expect(evidence.accessibility.flatMap(r=>r.violations.filter(v=>["serious","critical"].includes(v.impact))).length).toBe(0);
-} catch(e) {evidence.failure=String(e);process.exitCode=1;console.error(String(e));}
+} catch(e) {evidence.failure=e.stack || String(e);process.exitCode=1;console.error(evidence.failure);}
 finally {await writeFile("artifacts/audit/production-smoke.json",JSON.stringify(evidence,null,2));await browser.close();}

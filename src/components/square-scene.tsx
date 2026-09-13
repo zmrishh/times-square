@@ -23,6 +23,7 @@ import {
   slotWidth,
 } from "@/lib/registry";
 import { renderCreative } from "@/lib/creative-renderer";
+import { useBillboardVideo } from "./billboard-video";
 import { BUILDINGS, canWalk, type Building } from "@/lib/scene-layout";
 
 const INK = "#2e4961",
@@ -178,6 +179,7 @@ function Billboard({
   onSelect,
   onHover,
   reduced,
+  paused,
 }: {
   slot: Slot;
   state?: PublicSlot;
@@ -186,7 +188,9 @@ function Billboard({
   onSelect: (id: string) => void;
   onHover: (id: string | null) => void;
   reduced: boolean;
+  paused: boolean;
 }) {
+  const videoTexture = useBillboardVideo(slot, preview || state?.creative || undefined, paused, reduced);
   const [tex, setTex] = useState<THREE.CanvasTexture | null>(null);
   const [resolution, setResolution] = useState(256);
   const sampleAt = useRef(slot.art * 0.017);
@@ -302,10 +306,10 @@ function Billboard({
             }}
           >
             <meshBasicMaterial
-              key={tex?.uuid || "loading"}
-              map={tex}
+              key={videoTexture?.uuid || tex?.uuid || "loading"}
+              map={videoTexture || tex}
               toneMapped={false}
-              color={tex ? "#ffffff" : "#efede2"}
+              color={videoTexture || tex ? "#ffffff" : "#efede2"}
             />
           </mesh>
         </group>
@@ -898,6 +902,16 @@ function Controls({
       gl.domElement.dataset.renderCalls = String(gl.info.render.calls);
       gl.domElement.dataset.triangles = String(gl.info.render.triangles);
       gl.domElement.dataset.textures = String(gl.info.memory.textures);
+      const videos: {slot:string;time:number;paused:boolean;loop:boolean;texture:string}[] = [];
+      scene.traverse(object=>{
+        if (!(object instanceof THREE.Mesh) || !object.userData.slotId) return;
+        const material=object.material;
+        if (material instanceof THREE.MeshBasicMaterial && material.map instanceof THREE.VideoTexture) {
+          const video=material.map.image as HTMLVideoElement;
+          videos.push({slot:object.userData.slotId,time:video.currentTime,paused:video.paused,loop:video.loop,texture:material.map.uuid});
+        }
+      });
+      gl.domElement.dataset.videos=JSON.stringify(videos);
     }
     const dt = Math.min(delta, 0.05);
     if (!paused) {
@@ -1074,6 +1088,7 @@ export default function SquareScene(props: Props) {
           onSelect={props.onSelect}
           onHover={props.onHover}
           reduced={props.reduced}
+          paused={props.paused}
         />
       ))}
       <BillboardStructure />

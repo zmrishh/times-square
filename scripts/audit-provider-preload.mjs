@@ -1,13 +1,33 @@
 // TEST HARNESS ONLY. The application keeps its real Dodo adapter and signed
 // webhook boundary; this process intercepts test-provider HTTP with fixtures.
 // Never ship this preload or set NODE_OPTIONS to it on a deployed service.
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 const nativeFetch=globalThis.fetch;
 const fixturePath=".data/audit-provider.json";
 let queue=Promise.resolve();
 globalThis.fetch=async (input,init) => {
   const req=new Request(input,init), url=new URL(req.url);
+  // Isolated Supabase Storage HTTP fixture. No real credentials or bucket.
+  if(url.hostname === "audit.invalid" && url.pathname.startsWith("/storage/v1/object/paper-assets")) {
+    const key=url.pathname.split("/").at(-1);
+    if(req.method === "DELETE") {
+      const body=await req.json();
+      for(const name of body.prefixes || []) if(/^[a-f0-9-]{36}\.(webp|mp4)$/.test(name))
+        await unlink(`.data/audit-storage/${name}`).catch(()=>{});
+      return Response.json([]);
+    }
+    if(!/^[a-f0-9-]{36}\.(webp|mp4)$/.test(key)) return Response.json({message:"Invalid fixture key"},{status:400});
+    if(req.method === "POST") {
+      await mkdir(".data/audit-storage",{recursive:true});
+      await writeFile(`.data/audit-storage/${key}`,Buffer.from(await req.arrayBuffer()));
+      return Response.json({Key:`paper-assets/${key}`,Id:key});
+    }
+    if(req.method === "GET") {
+      try{return new Response(await readFile(`.data/audit-storage/${key}`),{headers:{"Content-Type":key.endsWith(".mp4")?"video/mp4":"image/webp"}});}
+      catch{return Response.json({message:"Fixture object not found"},{status:404});}
+    }
+  }
   if(url.hostname!=="test.dodopayments.com") return nativeFetch(input,init);
   const task=queue.then(async()=> {
     let data;

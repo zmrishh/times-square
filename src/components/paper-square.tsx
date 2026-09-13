@@ -252,7 +252,10 @@ export default function PaperSquare() {
       if (!document.hidden) void refresh().catch(() => {});
     }, 5000);
     setQuality(localStorage.getItem("paper-quality") || "medium");
-    setReduced(matchMedia("(prefers-reduced-motion: reduce)").matches);
+    const motionPreference = matchMedia("(prefers-reduced-motion: reduce)");
+    const syncMotion = () => setReduced(motionPreference.matches);
+    syncMotion();
+    motionPreference.addEventListener("change", syncMotion);
     if (sessionStorage.getItem("paper-intro")) setIntro(false);
     const sync = () => {
       const u = new URL(location.href),
@@ -287,6 +290,7 @@ export default function PaperSquare() {
     window.addEventListener("popstate", sync);
     return () => {
       clearInterval(timer);
+      motionPreference.removeEventListener("change", syncMotion);
       window.removeEventListener("popstate", sync);
     };
   }, [refresh, refreshMe, track, cmd, notify]);
@@ -800,6 +804,7 @@ export default function PaperSquare() {
               {panel === "detail" && (
                 <>
                   <Art
+                    play
                     creative={state?.creative}
                     art={slot.art}
                     ratio={slotAspect(slot)}

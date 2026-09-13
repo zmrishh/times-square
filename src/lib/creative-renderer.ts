@@ -94,8 +94,9 @@ export async function renderCreative(
   }
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, width, height);
-  if (c?.mode === "upload" && c.image) {
-    const im = await image(c.image, Math.max(width, height));
+  if (c.mode === "upload" || c.mode === "video") {
+    const source = c.mode === "video" ? c.poster || "" : c.image;
+    const im = await image(source, Math.max(width, height));
     if (im) drawFit(ctx, im, 0, 0, width, height, c.fit, c.cropX, c.cropY);
     else {
       ctx.fillStyle = "#f7f3e8";
@@ -103,7 +104,7 @@ export async function renderCreative(
       ctx.fillStyle = "#25231f";
       ctx.textAlign = "center";
       ctx.font = `600 ${Math.max(12, Math.min(width / 24, height / 8))}px Arial`;
-      ctx.fillText("Artwork unavailable", width / 2, height / 2, width * 0.9);
+      ctx.fillText(source ? "Artwork unavailable" : "Your upload fills this billboard", width / 2, height / 2, width * 0.9);
       ctx.textAlign = "start";
     }
     return;

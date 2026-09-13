@@ -9,6 +9,8 @@ import { submitCreative } from "../src/server/content";
 import { rate, type Account } from "../src/server/auth";
 import { RateLimitError } from "../src/server/errors";
 import { EMPTY_CREATIVE } from "../src/lib/registry";
+// Existing purchased templates remain supported; new UI creatives use uploads.
+const LEGACY_CREATIVE = {...EMPTY_CREATIVE, mode: "template" as const, headline: "Existing advertiser creative"};
 
 process.env.PAPER_DATA_DIR = ":memory:";
 process.env.PAYMENT_MODE = "dodo-test";
@@ -21,7 +23,7 @@ after(async () => { mock.restoreAll(); await closeDatabase(); });
 async function fixture(slot: string) {
   const a: Account = { id: id(), email: `${id()}@audit.example`, role: "advertiser", suspended: false };
   await query("INSERT INTO accounts(id,email,role) VALUES($1,$2,$3)", [a.id,a.email,a.role]);
-  const c = await submitCreative(a, {...EMPTY_CREATIVE, name:"Audit brand",url:"https://audit.example"});
+  const c = await submitCreative(a, {...LEGACY_CREATIVE, name:"Audit brand",url:"https://audit.example"});
   return reserve(a,c.creativeId,slot);
 }
 

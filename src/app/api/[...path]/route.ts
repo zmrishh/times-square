@@ -1,3 +1,5 @@
+import { prepareImage, prepareVideo } from "@/server/media";
+import { byteRange, MAX_MEDIA_BYTES, MAX_POSTER_BYTES } from "@/lib/media";
 import { boundedBody } from "@/server/request-body";
 import { RateLimitError } from "@/server/errors";
 import { financialReport } from "@/server/financial-report";
@@ -38,7 +40,7 @@ import {
   reconcileOrder,
 } from "@/server/payments";
 import { runJobs } from "@/server/jobs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { quoteAmount } from "@/lib/rules";
@@ -196,7 +198,7 @@ export async function GET(
             (public=true AND EXISTS (
               SELECT 1 FROM creatives c JOIN brands b ON b.id=c.brand_id
               JOIN accounts u ON u.id=b.account_id
-              WHERE (c.data->>'image'=$5 OR c.data->>'logo'=$5) AND c.status='approved'
+              WHERE (c.data->>'image'=$5 OR c.data->>'logo'=$5 OR c.data->>'poster'=$5) AND c.status='approved'
               AND NOT b.suspended AND NOT u.suspended
             )))`,
           [assetId, a?.id || null, owner, a?.role === "admin", `/api/assets/${assetId}`],
@@ -215,6 +217,20 @@ export async function GET(
           path.join(uploadDirectory(), asset.path),
         );
       else throw new Error("External setup required: private image storage.");
+      if (asset.path.endsWith(".mp4")) {
+        if (req.nextUrl.searchParams.has("size")) return json({error:"Unsupported video size variant"},400);
+        const range = byteRange(req.headers.get("range"), bytes.length);
+        const headers = {
+          "Content-Type":"video/mp4", "Accept-Ranges":"bytes",
+          "Cache-Control":"private, no-store", "X-Content-Type-Options":"nosniff",
+        };
+        if (range === false) return new Response(null,{status:416,headers:{...headers,"Content-Range":`bytes */${bytes.length}`}});
+        return new Response((range ? bytes.slice(range.start,range.end+1) : bytes) as BodyInit,{
+          status:range?206:200,
+          headers:{...headers,"Content-Length":String(range?range.end-range.start+1:bytes.length),
+            ...(range?{"Content-Range":`bytes ${range.start}-${range.end}/${bytes.length}`}:{})},
+        });
+      }
       // Authorization above is identical for every derivative. Limit the set of
       // variants so distant screens do not download full-resolution artwork.
       const requestedSize = req.nextUrl.searchParams.get("size");
@@ -347,85 +363,63 @@ export async function POST(
     );
     await tx((db) => rate(db, `requests:${visitor}`, 240, 60));
     if (p[0] === "upload") {
-      if (
-        Number(req.headers.get("content-length") || 0) >
-        5 * 1024 * 1024 + 10000
-      )
-        throw new Error("Image too large. Maximum 5 MB.");
       const a = await account(false);
       const owner = await anonymous();
       await tx((db) => rate(db, `upload:${a?.id || owner}`, 12, 3600));
-      const uploadBytes = await boundedBody(req, 5 * 1024 * 1024 + 10000);
+      const uploadBytes = await boundedBody(req, MAX_MEDIA_BYTES + MAX_POSTER_BYTES + 10000);
       const form = await new Response(uploadBytes as BodyInit, {
         headers: { "Content-Type": req.headers.get("content-type") || "" },
       }).formData();
       const file = form.get("file");
-      if (
-        !(file instanceof File) ||
-        file.size > 5 * 1024 * 1024 ||
-        file.size === 0
-      )
-        throw new Error("Image too large. Maximum 5 MB.");
+      if (!(file instanceof File) || !file.size || file.size > MAX_MEDIA_BYTES)
+        throw new Error("Upload an image or video up to 4 MB.");
       const buffer = Buffer.from(await file.arrayBuffer());
-      const staticImage =
-        buffer
-          .subarray(0, 8)
-          .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
-        (buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255) ||
-        (buffer.toString("ascii", 0, 4) === "RIFF" &&
-          buffer.toString("ascii", 8, 12) === "WEBP");
-      if (!staticImage)
-        throw new Error("Unsupported image. Use a static PNG, JPEG or WebP.");
-      const image = sharp(buffer, {
-        limitInputPixels: 16000000,
-        animated: false,
-        failOn: "warning",
-      });
-      const meta = await image.metadata();
-      if (
-        !["png", "jpeg", "webp"].includes(meta.format || "") ||
-        (meta.pages || 1) > 1 ||
-        !meta.width ||
-        !meta.height ||
-        meta.width > 6000 ||
-        meta.height > 6000 ||
-        meta.width < 64 ||
-        meta.height < 64
-      )
-        throw new Error(
-          "Unsupported image. Use a static PNG, JPEG or WebP, 64–6000 px, at most 16 megapixels.",
-        );
-      const output = await image
-        .rotate()
-        .resize({
-          width: 2048,
-          height: 2048,
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .webp({ quality: 90 })
-        .toBuffer();
-      const assetId = id(),
-        key = `${assetId}.webp`;
-      if (process.env.SUPABASE_URL) {
-        const { error } = await supabase()
-          .storage.from(process.env.SUPABASE_STORAGE_BUCKET || "paper-assets")
-          .upload(key, output, { contentType: "image/webp", upsert: false });
-        if (error) throw new Error("Image storage unavailable");
+      const video = file.type === "video/mp4" || buffer.toString("ascii",4,8) === "ftyp";
+      const files: {id:string;key:string;bytes:Buffer;mime:string}[] = [];
+      let metadata: {width:number;height:number;duration:number} | undefined;
+      let posterId = "";
+      if (video) {
+        const prepared = await prepareVideo(buffer);
+        const poster = form.get("poster");
+        if (!(poster instanceof File) || !poster.size || poster.size > MAX_POSTER_BYTES)
+          throw new Error("Upload a video with its preview frame. Please select the video again.");
+        const posterBytes = await prepareImage(Buffer.from(await poster.arrayBuffer()));
+        posterId=id();
+        files.push({id:posterId,key:`${posterId}.webp`,bytes:posterBytes,mime:"image/webp"});
+        metadata={width:prepared.width,height:prepared.height,duration:prepared.duration};
+        const assetId=id();
+        files.push({id:assetId,key:`${assetId}.mp4`,bytes:prepared.bytes,mime:"video/mp4"});
       } else {
-        await mkdir(uploadDirectory(), {
-          recursive: true,
-        });
-        await writeFile(
-          path.join(uploadDirectory(), key),
-          output,
-        );
+        const assetId=id();
+        files.push({id:assetId,key:`${assetId}.webp`,bytes:await prepareImage(buffer),mime:"image/webp"});
       }
-      await query(
-        "INSERT INTO assets(id,account_id,owner_token,path,bytes) VALUES($1,$2,$3,$4,$5)",
-        [assetId, a?.id || null, owner, key, output.length],
-      );
-      return json({ url: `/api/assets/${assetId}` });
+      const stored:string[]=[];
+      const bucket = process.env.SUPABASE_URL ? supabase().storage.from(process.env.SUPABASE_STORAGE_BUCKET || "paper-assets") : null;
+      try {
+        for (const f of files) {
+          if (bucket) {
+            const {error}=await bucket.upload(f.key,f.bytes,{contentType:f.mime,upsert:false});
+            if(error) throw new Error("Upload storage unavailable");
+          } else if (process.env.NODE_ENV !== "production") {
+            await mkdir(uploadDirectory(),{recursive:true});
+            await writeFile(path.join(uploadDirectory(),f.key),f.bytes);
+          } else throw new Error("External setup required: private media storage.");
+          stored.push(f.key);
+        }
+        await tx(async db=>{
+          for(const f of files) await db.query(
+            "INSERT INTO assets(id,account_id,owner_token,path,bytes) VALUES($1,$2,$3,$4,$5)",
+            [f.id,a?.id || null,owner,f.key,f.bytes.length],
+          );
+        });
+      } catch(e) {
+        if(bucket) await bucket.remove(stored).catch(()=>{});
+        else if (process.env.NODE_ENV !== "production") await Promise.all(stored.map(key=>unlink(path.join(uploadDirectory(),key)).catch(()=>{})));
+        throw e;
+      }
+      return json({url:`/api/assets/${files.at(-1)!.id}`,kind:video?"video":"image",
+        ...(posterId?{poster:`/api/assets/${posterId}`, ...metadata}:{}),
+      });
     }
     const body = await safeBody(req);
     if (p[0] === "auth") {

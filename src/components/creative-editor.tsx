@@ -1,5 +1,11 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -8,7 +14,7 @@ import {
   Image as ImageIcon,
   LoaderCircle,
   MapPin,
-  Type,
+  Video,
   Upload,
 } from "lucide-react";
 import {
@@ -19,13 +25,15 @@ import {
   slotAspect,
   slotWidth,
 } from "@/lib/registry";
+import { placementFormat, MAX_MEDIA_BYTES } from "@/lib/media";
+import { videoPoster } from "@/lib/video-poster";
 import { api, Art, Me } from "./ui";
 type Props = {
   slot: Slot;
   snapshot: Snapshot | null;
   me: Me;
   creative: Creative;
-  setCreative: (c: Creative) => void;
+  setCreative: Dispatch<SetStateAction<Creative>>;
   brandId: string | undefined;
   setBrandId: (id: string | undefined) => void;
   approvedId: string;
@@ -44,7 +52,11 @@ type Props = {
 };
 export function CreativeEditor(p: Props) {
   const { slot, creative: c, me } = p;
+  const format = placementFormat(slot);
+  const video = c.mode === "video";
   const checkoutRef = useRef<HTMLDivElement>(null);
+  const uploadController = useRef<AbortController | null>(null);
+  useEffect(() => () => uploadController.current?.abort(), []);
   const isLeading = Boolean(
     p.brandId &&
     p.snapshot?.slots.some((s) => s.id === slot.id && s.brandId === p.brandId),
@@ -124,15 +136,61 @@ export function CreativeEditor(p: Props) {
     if (p.approvedId || error)
       checkoutRef.current?.scrollIntoView({ block: "start" });
   }, [p.approvedId, error]);
-  const upload = (f: File, key: "logo" | "image") =>
+  const upload = (f: File) =>
     action(async () => {
+      const controller = new AbortController();
+      uploadController.current?.abort();
+      uploadController.current = controller;
+      if (f.size > MAX_MEDIA_BYTES)
+        throw new Error("Upload an image or video up to 4 MB.");
       const form = new FormData();
       form.append("file", f);
-      const r = await fetch("/api/upload", { method: "POST", body: form });
-      const d = await r.json();
+      if (video) form.append("poster", await videoPoster(f), "preview.jpg");
+      controller.signal.throwIfAborted();
+      const r = await fetch("/api/upload", {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.any([
+          controller.signal,
+          AbortSignal.timeout(60000),
+        ]),
+      });
+      const d = await r
+        .json()
+        .catch(() => ({ error: "Upload failed. Try a file under 4 MB." }));
       if (!r.ok) throw new Error(d.error);
-      change(key, d.url);
+      if (d.kind !== (video ? "video" : "image"))
+        throw new Error(
+          "Choose the matching image or video option, then upload again.",
+        );
+      controller.signal.throwIfAborted();
+      p.setCreative((latest) => ({
+        ...latest,
+        mode: video ? "video" : "upload",
+        image: d.url,
+        poster: d.poster || "",
+        logo: "",
+        fit: "cover",
+        cropX: 50,
+        cropY: 50,
+      }));
+      p.setApprovedId("");
+      setAccepted(false);
+      setSaved("Saving draft…");
     });
+  const chooseMedia = (mode: "upload" | "video") => {
+    if (busy || c.mode === mode) return;
+    p.setCreative({
+      ...c,
+      mode,
+      image: "",
+      poster: "",
+      logo: "",
+      fit: "cover",
+    });
+    p.setApprovedId("");
+    setAccepted(false);
+  };
   return (
     <>
       <div className="editor-placement">
@@ -188,22 +246,81 @@ export function CreativeEditor(p: Props) {
           </select>
         </label>
       )}
-      <div className="segmented">
+      <div className="media-spec">
+        <span className="eyebrow">YOUR BILLBOARD FORMAT</span>
+        <strong>
+          {format.label} <small>aspect ratio</small>
+        </strong>
+        <span>
+          Recommended: {format.width} × {format.height} px
+        </span>
+        {slot.segments.length > 1 && (
+          <p>
+            Upload one continuous design. It wraps across the entire corner.
+          </p>
+        )}
+      </div>
+      <div className="segmented" aria-label="Creative format">
         <button
-          className={c.mode === "template" ? "chosen" : ""}
-          onClick={() => change("mode", "template")}
+          disabled={busy}
+          aria-pressed={!video}
+          className={!video ? "chosen" : ""}
+          onClick={() => chooseMedia("upload")}
         >
-          <Type size={15} />
-          Template
+          <ImageIcon size={15} /> Image / logo
         </button>
         <button
-          className={c.mode === "upload" ? "chosen" : ""}
-          onClick={() => change("mode", "upload")}
+          disabled={busy}
+          aria-pressed={video}
+          className={video ? "chosen" : ""}
+          onClick={() => chooseMedia("video")}
         >
-          <ImageIcon size={15} />
-          Upload artwork
+          <Video size={15} /> Looping video
         </button>
       </div>
+      {c.mode === "template" && (
+        <p className="notice">
+          This is a previously saved design. Upload an image or video to replace
+          it.
+        </p>
+      )}
+      <label className={`upload-zone ${busy ? "upload-busy" : ""}`}>
+        {busy ? (
+          <LoaderCircle className="spin" size={20} />
+        ) : (
+          <Upload size={20} />
+        )}
+        <strong>
+          {busy
+            ? "Preparing your upload…"
+            : c.image
+              ? "Replace your upload"
+              : video
+                ? "Upload your video"
+                : "Upload your image or logo"}
+        </strong>
+        <span>
+          {video
+            ? "H.264 MP4 · up to 30 seconds · 4 MB · 60 fps"
+            : "PNG, JPEG or WebP · up to 4 MB"}
+          <br />
+          {video
+            ? "64–1920 px per side · up to 1080p area · plays silently"
+            : "64–6000 px per side · up to 16 megapixels"}
+        </span>
+        <input
+          key={video ? "video" : "image"}
+          disabled={busy}
+          type="file"
+          aria-label={video ? "Upload video" : "Upload artwork"}
+          accept={video ? "video/mp4" : "image/png,image/jpeg,image/webp"}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) void upload(file);
+          }}
+        />
+      </label>
       <Art creative={c} art={slot.art} ratio={slotAspect(slot)} safe />
       <button className="preview-link" onClick={p.onView}>
         <Building2 size={16} />
@@ -275,116 +392,52 @@ export function CreativeEditor(p: Props) {
           />
         </label>
       </div>
-      <label className="upload-zone">
-        <Upload size={20} />
-        <strong>
-          {c.mode === "template"
-            ? c.logo
-              ? "Replace your logo"
-              : "Add your logo"
-            : c.image
-              ? "Replace artwork"
-              : "Upload finished artwork"}
-        </strong>
-        <span>
-          Static PNG, JPEG or WebP · up to 5 MB
-          <br />
-          64–6000 px · 16 MP maximum
-        </span>
-        <input
-          type="file"
-          aria-label={c.mode === "template" ? "Upload logo" : "Upload artwork"}
-          accept="image/png,image/jpeg,image/webp"
-          onChange={(e) =>
-            e.target.files?.[0] &&
-            void upload(
-              e.target.files[0],
-              c.mode === "template" ? "logo" : "image",
-            )
-          }
-        />
-      </label>
-      {c.mode === "template" ? (
+      {c.image && (
         <>
-          <label className="field">
-            Headline <span>90 characters</span>
-            <textarea
-              rows={2}
-              value={c.headline}
-              maxLength={90}
-              onChange={(e) => change("headline", e.target.value)}
-            />
-          </label>
-          <label className="field">
-            Subline <span>Optional · 80 characters</span>
-            <input
-              value={c.subline}
-              maxLength={80}
-              onChange={(e) => change("subline", e.target.value)}
-            />
-          </label>
-        </>
-      ) : (
-        <>
-          <label className="field">
-            Artwork fit
-            <select
-              value={c.fit}
-              onChange={(e) => change("fit", e.target.value as Creative["fit"])}
-            >
-              <option value="contain">Fit whole image</option>
-              <option value="cover">Fill screen (crop shown above)</option>
-            </select>
-          </label>
-          {c.fit === "cover" && (
-            <div className="form-grid">
-              <label className="field">
-                Horizontal crop
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={c.cropX}
-                  onChange={(e) => change("cropX", Number(e.target.value))}
-                />
-              </label>
-              <label className="field">
-                Vertical crop
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={c.cropY}
-                  onChange={(e) => change("cropY", Number(e.target.value))}
-                />
-              </label>
-            </div>
-          )}
+          <p className="fine">
+            Your upload fills the whole billboard. Different ratios crop at the
+            edges; adjust the framing below. No text or logo overlay is added.
+          </p>
+          <div className="form-grid">
+            <label className="field">
+              Horizontal crop
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={c.cropX}
+                onChange={(e) => change("cropX", Number(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              Vertical crop
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={c.cropY}
+                onChange={(e) => change("cropY", Number(e.target.value))}
+              />
+            </label>
+          </div>
         </>
       )}
-      <div className="color-fields">
-        <label>
-          Background
-          <input
-            type="color"
-            value={c.bg}
-            onChange={(e) => change("bg", e.target.value)}
-          />
-          <span>{c.bg.toUpperCase()}</span>
-        </label>
-        <label>
-          Text
-          <input
-            type="color"
-            value={c.fg}
-            onChange={(e) => change("fg", e.target.value)}
-          />
-          <span>{c.fg.toUpperCase()}</span>
-        </label>
-      </div>
+      {!video && (
+        <div className="color-fields">
+          <label>
+            Background for transparent logos
+            <input
+              type="color"
+              value={c.bg}
+              onChange={(e) => change("bg", e.target.value)}
+            />
+            <span>{c.bg.toUpperCase()}</span>
+          </label>
+        </div>
+      )}
       <p className="fine">
-        Preview and billboard share one renderer. Logos retain their
-        proportions. Save your artwork, check the price, and pay to place it.
+        Brand details appear when someone opens your billboard. Videos loop
+        silently; visitors who prefer reduced motion see the preview frame.
       </p>
       <div ref={checkoutRef}>
         {error && (
@@ -403,7 +456,7 @@ export function CreativeEditor(p: Props) {
             </div>
             <button
               className="primary full"
-              disabled={busy}
+              disabled={busy || !c.image || c.mode === "template"}
               onClick={() =>
                 void action(async () => {
                   await api("draft", {
