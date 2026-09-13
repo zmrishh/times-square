@@ -6,7 +6,7 @@ import DodoPayments from "dodopayments";
 import { CheckoutSessions } from "dodopayments/resources/checkout-sessions";
 import { boundedBody } from "../src/server/request-body";
 import { quoteAmount, nextMinimum } from "../src/lib/rules";
-import { origin } from "../src/server/config";
+import { origin, validateProduction } from "../src/server/config";
 import { EMPTY_CREATIVE } from "../src/lib/registry";
 process.env.PAPER_DATA_DIR = ":memory:";
 process.env.PAYMENT_MODE = "simulation";
@@ -113,6 +113,39 @@ test("official SDK rejects invalid signatures and accepts a signed payload", () 
       },
     }),
   );
+});
+
+test("production URL errors name the setting without leaking its value", () => {
+  const fixture = {
+    NODE_ENV: "production", APP_ORIGIN: "https://paper.example",
+    AUTH_MODE: "supabase", PAYMENT_MODE: "dodo-test",
+    DATABASE_URL: "postgresql://user:private-password@db.example:6543/postgres",
+    SUPABASE_URL: "https://project.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "fixture-key",
+    DODO_PAYMENTS_API_KEY: "fixture-key", DODO_PAYMENTS_WEBHOOK_KEY: "fixture-key",
+    DODO_PRODUCT_ID: "fixture-product", DODO_BUSINESS_ID: "fixture-business",
+    JOB_SECRET: "fixture-worker-secret-at-least-32-characters", SUPPORT_EMAIL: "support@example.com",
+  };
+  const before = Object.fromEntries(Object.keys(fixture).map(key => [key, process.env[key]]));
+  Object.assign(process.env, fixture);
+  try {
+    assert.doesNotThrow(validateProduction);
+    for (const key of ["APP_ORIGIN", "SUPABASE_URL", "DATABASE_URL"]) {
+      Object.assign(process.env, fixture, { [key]: "secret-value-that-is-not-a-url" });
+      assert.throws(validateProduction, (error: unknown) =>
+        error instanceof Error && error.message.includes(key) && !error.message.includes("secret-value"));
+    }
+    Object.assign(process.env, fixture, { DATABASE_URL: "https://db.example" });
+    assert.throws(validateProduction, /Invalid DATABASE_URL/);
+    for (const url of ["http://project.supabase.co", "https://project.supabase.co/rest/v1", "https://user:password@project.supabase.co"]) {
+      Object.assign(process.env, fixture, { SUPABASE_URL: url });
+      assert.throws(validateProduction, /Invalid SUPABASE_URL/);
+    }
+  } finally {
+    for (const [key, value] of Object.entries(before)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 test("database integration: reservations, evidence, refunds and access boundaries", async (t) => {
   const users: Account[] = [];

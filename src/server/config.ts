@@ -1,8 +1,17 @@
+function parseConfiguredUrl(value: string, key: string): URL {
+  try {
+    return new URL(value);
+  } catch {
+    // Identify the setting without exposing a connection password or API key.
+    throw new Error(`Invalid ${key}. Enter the full URL as its value, without the variable name.`);
+  }
+}
+
 export function origin(
   value = process.env.APP_ORIGIN || "http://localhost:3000",
   production = process.env.NODE_ENV === "production",
 ) {
-  const u = new URL(value);
+  const u = parseConfiguredUrl(value, "APP_ORIGIN");
   if (u.username || u.password || u.pathname !== "/" || u.search || u.hash)
     throw new Error("APP_ORIGIN must be a canonical origin.");
   if (
@@ -57,8 +66,13 @@ export function validateProduction() {
     required(key);
   if (required("JOB_SECRET").length < 32)
     throw new Error("Production requires a JOB_SECRET of at least 32 characters.");
-  if (new URL(required("SUPABASE_URL")).protocol !== "https:")
-    throw new Error("Production requires HTTPS Supabase storage and authentication.");
+  const supabaseUrl = parseConfiguredUrl(required("SUPABASE_URL"), "SUPABASE_URL");
+  if (supabaseUrl.protocol !== "https:" || supabaseUrl.username || supabaseUrl.password ||
+      supabaseUrl.pathname !== "/" || supabaseUrl.search || supabaseUrl.hash)
+    throw new Error("Invalid SUPABASE_URL. Use the HTTPS Project URL from Supabase Connect, without an API path.");
+  const databaseUrl = parseConfiguredUrl(required("DATABASE_URL"), "DATABASE_URL");
+  if (!["postgres:", "postgresql:"].includes(databaseUrl.protocol) || !databaseUrl.hostname)
+    throw new Error("Invalid DATABASE_URL. Use the PostgreSQL connection URL from Supabase Connect.");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(required("SUPPORT_EMAIL")))
     throw new Error("Production requires a valid SUPPORT_EMAIL.");
 }
