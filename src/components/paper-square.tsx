@@ -54,13 +54,14 @@ import { Art, api, Me, emptyMe, IconButton } from "./ui";
 import { CreativeEditor } from "./creative-editor";
 import { WelcomeOverlay } from "./welcome-overlay";
 import googleButton from './google-sign-in.module.css';
-import { AdminPanel, Rules, AccountPanel } from "./panels";
+import { AdminPanel, Rules, HowItWorks, AccountPanel } from "./panels";
 const Scene = dynamic(() => import("./square-scene"), { ssr: false });
 type Panel =
   | "detail"
   | "directory"
   | "map"
   | "rules"
+  | "how"
   | "editor"
   | "account"
   | "auth"
@@ -490,6 +491,7 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
     directory: "Around the square",
     map: "Find your corner",
     rules: "A little square. Clear rules.",
+    how: "How it works",
     editor: "Make your mark",
     account: "Your corner of the square",
     auth: "Welcome to the square",
@@ -533,9 +535,11 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
           </button>
         </nav>
         <div className="header-right">
-          <button className="how-link" onClick={() => open("rules")}>
+          <button className="how-link" onClick={() => open("how")}>
             How it works <ArrowUpRight size={14} />
           </button>
+          <div className="header-offer">
+          <p>Your brand on a virtual Times Square billboard. <strong>From $10.</strong></p>
           <button
             className="primary header-cta"
             onClick={() => {
@@ -546,6 +550,7 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
           >
             Get a billboard <ArrowUpRight size={16} />
           </button>
+          </div>
           <IconButton
             label="Your account"
             onClick={() => {
@@ -642,20 +647,21 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
             <em>Big presence.</em>
           </h1>
           <p>
-            Take a stroll. Find your next favorite.
-            <br />
-            A little Times Square for the internet.
+            Your brand on a virtual Times Square billboard. <strong>From $10.</strong>
           </p>
           <button
             className="intro-link"
             onClick={() => {
               setIntro(false);
-              cmd("tour");
+              setTab("placements");
+              setCategory("All");
+              open("directory");
             }}
           >
-            Take a little look around <ArrowRight size={19} />
+            Choose a billboard <ArrowRight size={19} />
           </button>
           <div className="intro-foot">
+            <button className="text-link" onClick={() => { setIntro(false); cmd("tour"); }}>Take a little look around <ArrowRight size={13} /></button>
             <button className="text-link" onClick={()=>select('tsq-026')}>See a video billboard <Play size={13}/></button>
           </div>
           <div className="intro-foot">
@@ -795,8 +801,8 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
       )}
       <footer className="scene-footer">
         <span>Independent ideas. An iconic address.</span>
-        <button onClick={() => open("rules")}>
-          Virtual billboards. Real possibilities. <ArrowUpRight size={12} />
+        <button onClick={() => open("how")}>
+          How it works <ArrowUpRight size={12} />
         </button>
         <button
           onClick={() => {
@@ -1355,7 +1361,8 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
                   </div>
                 </>
               )}
-              {panel === "rules" && <Rules support={snapshot?.support || ""} />}
+              {panel === "how" && <HowItWorks onChoose={() => { setTab('placements'); setCategory('All'); open('directory'); }} onRules={() => open('rules')} />}
+              {panel === "rules" && <Rules support={snapshot?.support || ""} paymentMode={snapshot?.mode} />}
               {panel === "editor" && !draftReady && <p className="panel-intro">
                 {draftError ? <>Your draft could not be loaded. <button className="text-link" onClick={() => location.reload()}>Try again</button></> : 'Loading your saved draft…'}
               </p>}

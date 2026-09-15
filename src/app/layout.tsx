@@ -36,9 +36,9 @@ const welcomeSerif = Bodoni_Moda({
 });
 
 export const metadata: Metadata = {
-  title: "Paper Square — A little Times Square for the internet",
+  title: "Paper Square — Virtual Times Square billboards from $10",
   description:
-    "Explore an ink-on-paper Times Square. Discover independent brands and put yours on a virtual billboard.",
+    "Your brand on a virtual Times Square billboard. From $10. Choose your spot, add your artwork, pay once, and stay until outbid.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

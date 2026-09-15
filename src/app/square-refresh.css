@@ -209,6 +209,15 @@ a:focus-visible {
 .header-right {
   gap: 16px;
 }
+.header-offer { display: flex; align-items: center; gap: 14px; }
+.header-offer > p { max-width: 220px; margin: 0; font-size: 12px; line-height: 1.45; color: var(--ink); }
+.header-offer > p strong { white-space: nowrap; }
+.header-offer .header-cta { flex-shrink: 0; white-space: nowrap; }
+.intro-foot:has(> button + button) { flex-wrap: wrap; gap: 12px 20px; }
+.detailed-rules-link { margin: 22px 0 4px; text-align: left; }
+.how-it-works .rule-number { padding: 14px 0; gap: 16px; }
+.how-it-works .rule-number p { margin: 6px 0 0; }
+.how-it-works > .fine { font-size: 11px; line-height: 1.6; }
 .how-link {
   font-size: 13px;
 }
@@ -849,4 +858,25 @@ a:focus-visible {
     animation: none !important;
     transition: none !important;
   }
+}
+
+@media (max-width: 1000px) {
+  .header-offer > p {
+    position: fixed;
+    top: 80px;
+    left: 0;
+    width: 100%;
+    max-width: none;
+    padding: 9px 16px;
+    text-align: center;
+    font-size: 11px;
+    background: #faf8f0;
+    border-bottom: 1px solid #183b4b1a;
+  }
+  .scene-caption { top: 130px; }
+}
+@media (max-width: 700px) {
+  .header-offer > p { top: 66px; }
+  .scene-footer > button:nth-child(2) { display: inline-flex; }
+  .scene-footer { justify-content: space-between; gap: 10px; }
 }

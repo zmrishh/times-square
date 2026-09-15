@@ -1,5 +1,8 @@
 # Paper Square production audit
 
+> Historical audit from September 13. Later deployment and live payment evidence
+> supersede its configuration/checkout blockers; see [current live verification](dodo-live-setup.md).
+
 **Launch decision: blocked by production configuration and external acceptance, not ready for public live payments.** The local application has been repaired and its core journeys pass the tests below. Real Dodo **test-mode** purchase and full refund succeeded. Real webhook delivery, production Supabase authentication/storage, managed PostgreSQL, deployed TLS/worker monitoring, and live merchant acceptance still need verification. USD card checkout is implemented; UPI is not.
 
 Audited September 13, 2026. This report supersedes earlier verification counts and statements that no real provider test was available. No site was deployed, live customer charged, or real customer refunded. The later **direct checkout** requirement takes precedence over the original approval-gated journey.

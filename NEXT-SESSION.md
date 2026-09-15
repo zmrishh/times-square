@@ -2,17 +2,44 @@
 
 ## Current objective and result
 
-The user chose Google sign-in instead of configuring SMTP. They created a
-Google OAuth web client and saved its Client ID and Secret in Supabase.
-Google sign-in is now implemented, tested, and deployed. Do not resume SMTP
-setup as the immediate objective. Never print credentials from environment files.
+The user requested live checkout verification, simpler How it works copy,
+Twitter/Open Graph previews, and a clear $10 offer beside the main CTA.
+Read-only provider/ledger verification confirms an existing live checkout and
+payment succeeded for TSQ-013, with matching amount/tax, processed payment
+webhook, allocation and display history. No new charge or refund was made.
+The stale public disabled-payment warning is replaced by payment-mode-aware
+copy. How it works has four short steps; detailed rules remain separate.
+The header and introductory purchase CTA explain the virtual billboard offer.
+Homepage previews use a real 1200×630 city screenshot, and homepage/billboard
+links both have complete Open Graph and Twitter metadata.
+
+The final branded domain is still awaiting the user's answer. Vercel lists
+`zmrish.com`, but no choice for this site's branded domain was supplied. Do not
+guess or change Auth/checkout/webhook origins without that choice. Canonical
+and social URLs follow the configured `APP_ORIGIN` (currently the public Vercel
+URL below). Google login remains configured in Supabase; SMTP is not needed.
+Never print credentials from environment files.
+
+Verification scripts: `verify-live-payments.mjs` (read-only hosted/provider
+check), `verify-launch-local.mjs` (isolated UI checks plus screenshot capture),
+and `verify-launch-ui.mjs` (`PAPER_TEST_ORIGIN` selects local/live site).
+Evidence is in `artifacts/audit/live-payment-verification.json` and
+`artifacts/launch`. Desktop 1366px, tablet 820px and touch mobile 390px passed;
+no horizontal overflow or page errors. Twitterbot HTML includes all preview
+tags in its head and both linked images return HTTP 200. Local typecheck,
+focused lint and production build passed. Bank payouts, live refunds and
+separate merchant-approval correspondence were not checked.
+The same UI/metadata checks passed on the public production URL after promotion
+to `dpl_GqoHt8MLBFrZTDUena9gzqUxa9Pu`; the launch screenshots and JSON now reflect
+that live run. Payment configuration and recent scheduled worker checks passed
+during deployment. Branded-domain selection is the only outstanding user input.
 
 ## Live deployment
 
 - Website: https://newyorkcity-kappa.vercel.app
 - Vercel project: `timessquare`, team: `zmrishhs-projects`.
-- Promoted deployment: `dpl_26Y8y7xi5zgbZ8coPQhhRTBQz2kj`
-- Deployment URL: https://timessquare-kkr6smwim-zmrishhs-projects.vercel.app
+- Promoted deployment: `dpl_GqoHt8MLBFrZTDUena9gzqUxa9Pu`
+- Deployment URL: https://timessquare-ixbeu5dfp-zmrishhs-projects.vercel.app
 - Production presents **Continue with Google** instead of an email form.
 - Local simulation retains the development email-code form.
 - Google OAuth credentials stay in Supabase; no SMTP or Resend key is needed

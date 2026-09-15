@@ -13,6 +13,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { Creative, money, SLOTS, Snapshot } from "@/lib/registry";
+import { RULES } from '@/lib/rules';
 import { api, Art, Brand, Me, MyOrder } from "./ui";
 export function AccountPanel({
   me,
@@ -209,17 +210,33 @@ export function AccountPanel({
     </>
   );
 }
-export function Rules({ support }: { support: string }) {
+export function HowItWorks({ onChoose, onRules }: { onChoose: () => void; onRules: () => void }) {
+  return <div className="rules how-it-works">
+    <p className="panel-intro">Your brand on a virtual Times Square billboard. From $10.</p>
+    {[
+      ['Choose a billboard', 'Explore the square and pick your spot. Each billboard shows its current price.'],
+      ['Add your artwork', 'Upload an image or video, add your website, and preview it on the billboard.'],
+      ['Pay', 'Review the total and pay securely. Your artwork goes live after payment is confirmed.'],
+      ['Stay until outbid', 'Your brand stays on that billboard until another advertiser takes the lead. A takeover requires at least $10 more in total contributions to that billboard.'],
+    ].map(([heading, body], i) => <div className="rule-number" key={heading}>
+      <span>0{i + 1}</span><div><h3>{heading}</h3><p>{body}</p></div>
+    </div>)}
+    <p className="fine">One-time payment. Video costs 50% more; applicable tax is shown at checkout. No minimum display time is guaranteed. Being outbid does not automatically trigger a refund. Placements may be removed under the content rules.</p>
+    <button className="primary full" onClick={onChoose}>Choose a billboard <ArrowRight size={16} /></button>
+    <button className="text-link detailed-rules-link" onClick={onRules}>Read the detailed rules & privacy policy <ArrowUpRight size={14} /></button>
+  </div>;
+}
+export function Rules({ support, paymentMode }: { support: string; paymentMode?: string }) {
   return (
     <div className="rules">
       <p className="panel-intro">
-        A little Times Square for the internet. Explore freely. Discover
-        independent ideas. Put your own brand in the picture.
+        Placement, pricing, content and privacy rules. Review the total shown
+        at checkout before paying.
       </p>
       {[
         [
           "Pick your place",
-          "Every billboard has its own cumulative paid ranking. The eligible brand with the highest applied total is displayed there. Small placements open at $10, standard at $25, premium at $50. These are editable launch assumptions.",
+          "Every billboard has its own cumulative paid ranking: your eligible contributions to that billboard. The eligible brand with the highest total is displayed there. Opening prices start at $10 for small placements, $25 for standard and $50 for premium. Each billboard shows its current price.",
         ],
         [
           "Make it yours",
@@ -227,7 +244,7 @@ export function Rules({ support }: { support: string }) {
         ],
         [
           "Pay to take the lead",
-          "The default minimum takeover ranking is the current ranking plus $10. An optional 2× admin preset affects new quotes only, with the same minimum $10 increase. Video adds a separate 50% format fee. A leader cannot outbid itself, but may pay to upgrade an image to video. There is no wallet, transferable balance, subscription, automatic rebid, withdrawal, payout, resale or prize.",
+          "A takeover requires at least $10 more than the current ranking. The exact minimum is shown before checkout and may be higher. Price changes apply to new quotes only. Video adds a separate 50% format fee. A leader cannot outbid itself, but may pay to upgrade an image to video. There is no wallet, transferable balance, subscription, automatic rebid, withdrawal, payout, resale or prize.",
         ],
         [
           "Stay until the next big idea",
@@ -305,7 +322,6 @@ export function Rules({ support }: { support: string }) {
         the center of the screen. Tracking pauses in hidden tabs. Browser/day
         deduplication, signed-in owner filtering and obvious bot filtering
         reduce noise. This is approximate reach, not verified unique humans.
-        Decorative people are never visitors.
       </p>
       <h3>Support & operator details</h3>
       {support ? (
@@ -322,8 +338,11 @@ export function Rules({ support }: { support: string }) {
         </div>
       )}
       <p className="fine">
-        Rules version 2026-09-v1. Live charging remains disabled until merchant
-        acceptance for this exact product is confirmed.
+        Rules version {RULES.version}. {paymentMode === 'dodo-live'
+          ? 'Live payments are enabled. Checkout charges real money in USD, with applicable tax shown before payment.'
+          : paymentMode === 'dodo-test' || paymentMode === 'simulation'
+            ? 'This is a test environment. Checkout does not charge real money.'
+            : 'Payment availability and the final total are shown at checkout.'}
       </p>
     </div>
   );

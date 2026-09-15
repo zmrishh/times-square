@@ -1,5 +1,24 @@
 # Dodo live activation
 
+## Current verification — September 15, 2026
+
+Read-only verification now confirms a real live checkout and payment succeeded
+for TSQ-013. The provider checkout/payment IDs, order metadata, live environment,
+merchant, product, USD amount and tax match the production ledger. The payment
+has an allocation and display-history entry; its `payment.succeeded` webhook
+was received and processed. Public inventory reports `dodo-live`, charging is
+not paused, and available opening prices start at $10.
+
+Run `node scripts/verify-live-payments.mjs` with the existing ignored local
+provider/Supabase management configuration. It prints only non-identifying
+checks and saves `artifacts/audit/live-payment-verification.json`. It creates
+no charge or refund. This verifies an existing completed checkout; bank payout,
+a live refund, and separate merchant-approval correspondence were not checked.
+The public rules now describe the active payment mode rather than retaining
+the old pre-activation warning.
+
+## Historical activation record — September 14
+
 Live payments were enabled on September 14, 2026 at `https://newyorkcity-kappa.vercel.app`, using deployment `dpl_7CoEtSkM46BJg6zTotxUKbthexy4`. No real card payment or refund was made during setup.
 
 - Created live product `pdt_0Nnb5CaME4AitLjbUfbtH`, **Paper Square — Virtual Billboard Advertising**. It uses the existing test product's tax category and one-time USD pricing: $1 minimum, Pay What You Want, tax-exclusive, no discount, and purchasing-power-parity disabled. The app supplies the actual quoted amount. The real-provider product preflight passed.
