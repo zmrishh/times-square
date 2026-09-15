@@ -227,7 +227,7 @@ export function Rules({ support }: { support: string }) {
         ],
         [
           "Pay to take the lead",
-          "The default minimum takeover ranking is the current ranking plus $10. An optional 2× admin preset affects new quotes only. Video adds a separate 50% format fee. A leader cannot outbid itself, but may pay to upgrade an image to video. There is no wallet, transferable balance, subscription, automatic rebid, withdrawal, payout, resale or prize.",
+          "The default minimum takeover ranking is the current ranking plus $10. An optional 2× admin preset affects new quotes only, with the same minimum $10 increase. Video adds a separate 50% format fee. A leader cannot outbid itself, but may pay to upgrade an image to video. There is no wallet, transferable balance, subscription, automatic rebid, withdrawal, payout, resale or prize.",
         ],
         [
           "Stay until the next big idea",
@@ -706,7 +706,7 @@ export function AdminPanel({
               }
             >
               <option value="quarter">Current ranking + $10</option>
-              <option value="double">2× the leader</option>
+              <option value="double">2× the leader (at least $10 more)</option>
             </select>
           </label>
           <p className="fine">

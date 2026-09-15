@@ -47,10 +47,13 @@ import {
 } from "@/lib/registry";
 import { nextMinimum,videoPrice } from "@/lib/rules";
 import { DEMO_BILLBOARDS } from "@/lib/demo-billboards";
-import { setBillboardAudio,closeBillboardAudio } from "@/lib/billboard-audio";
+import { useSquareAudio } from "./use-square-audio";
+import { RequestError, requestErrorMessage } from "@/lib/api-client";
 import type { SceneCommand } from "./square-scene";
 import { Art, api, Me, emptyMe, IconButton } from "./ui";
 import { CreativeEditor } from "./creative-editor";
+import { WelcomeOverlay } from "./welcome-overlay";
+import googleButton from './google-sign-in.module.css';
 import { AdminPanel, Rules, AccountPanel } from "./panels";
 const Scene = dynamic(() => import("./square-scene"), { ssr: false });
 type Panel =
@@ -92,8 +95,9 @@ class SceneBoundary extends Component<
     return this.state.error ? null : this.props.children;
   }
 }
-export default function PaperSquare() {
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null),
+export default function PaperSquare({ initialSnapshot = null }: { initialSnapshot?: Snapshot | null }) {
+  const initialInventory = useRef(initialSnapshot);
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(initialSnapshot),
     [me, setMe] = useState<Me>(emptyMe),
     [panel, setPanel] = useState<Panel>(null),
     [selected, setSelected] = useState<string | null>(null),
@@ -103,7 +107,6 @@ export default function PaperSquare() {
     [intro, setIntro] = useState(true),
     [quality, setQuality] = useState("medium"),
     [reduced, setReduced] = useState(false),
-    [sound, setSound] = useState(false),
     [toast, setToast] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -113,17 +116,27 @@ export default function PaperSquare() {
     [tab, setTab] = useState("placements"),
     [command, setCommand] = useState<SceneCommand>({ type: "reset", nonce: 0 }),
     [creative, setCreative] = useState<Creative>({ ...EMPTY_CREATIVE }),
+    [draftReady, setDraftReady] = useState(false),
+    [draftError, setDraftError] = useState(false),
     [brandId, setBrandId] = useState<string>(),
     [approvedId, setApprovedId] = useState(""),
     [preview, setPreview] = useState(false),
     [email, setEmail] = useState(""),
     [code, setCode] = useState(""),
     [sent, setSent] = useState(false),
+    [resendUntil, setResendUntil] = useState(0),
+    [resendSeconds, setResendSeconds] = useState(0),
     [localCode, setLocalCode] = useState(""),
     [afterAuth, setAfterAuth] = useState<Panel>("account"),
     [checkout, setCheckout] = useState<Checkout | null>(null),
     [report, setReport] = useState("");
   const [locked, setLocked] = useState(false);
+  const [syncError, setSyncError] = useState("");
+  const [checkoutSyncError, setCheckoutSyncError] = useState("");
+  const publicRead = useRef<Promise<void> | null>(null);
+  const { enabled: sound, toggle: toggleSound } = useSquareAudio();
+  const [welcomeComplete, setWelcomeComplete] = useState(false);
+  const finishWelcome = useCallback(() => setWelcomeComplete(true), []);
   useEffect(() => {
     const changed = () => setLocked(!!document.pointerLockElement);
     document.addEventListener("pointerlockchange", changed);
@@ -131,20 +144,37 @@ export default function PaperSquare() {
   }, []);
   const joystick = useRef({ x: 0, y: 0 }),
     panelRef = useRef<HTMLElement>(null),
-    version = useRef(-1);
+    version = useRef(initialSnapshot?.version ?? -1);
   const slot = SLOTS.find((s) => s.id === selected) || SLOTS[0],
     state = snapshot?.slots.find((s) => s.id === slot.id),
     hovered = SLOTS.find((s) => s.id === hover),
     hoverState = snapshot?.slots.find((s) => s.id === hover),
     simulation = snapshot?.mode === "simulation";
   const notify = useCallback((s: string) => setToast(s), []);
+  const waitToResend = (seconds: number) => {
+    setResendSeconds(Math.ceil(seconds));
+    setResendUntil(Date.now() + seconds * 1000);
+  };
+  useEffect(() => {
+    if (!resendUntil) return;
+    const timer = setInterval(() => {
+      const seconds = Math.max(0, Math.ceil((resendUntil - Date.now()) / 1000));
+      setResendSeconds(seconds);
+      if (!seconds) setResendUntil(0);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendUntil]);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 5500);
     return () => clearTimeout(t);
   }, [toast]);
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(() => {
+    if (publicRead.current) return publicRead.current;
+    publicRead.current = (async () => {
+    try {
     const data = await api<Snapshot>("public");
+    setSyncError("");
     if (data.version < version.current) return;
     version.current = data.version;
     setSnapshot((prev) =>
@@ -160,13 +190,29 @@ export default function PaperSquare() {
           }
         : data,
     );
+    } catch (error) {
+      setSyncError("Reconnecting to the square. Updates will resume automatically.");
+      throw error;
+    } finally { publicRead.current = null; }
+    })();
+    return publicRead.current;
   }, []);
   const authRead = useRef(0);
+  const [accountState, setAccountState] = useState<'loading' | 'ready' | 'error'>('loading');
   const refreshMe = useCallback(async () => {
     const generation = ++authRead.current;
-    const m = await api<Me>("me");
-    if (generation === authRead.current) setMe(m);
-    return m;
+    setAccountState('loading');
+    try {
+      const m = await api<Me>("me");
+      if (generation === authRead.current) {
+        setMe(m);
+        setAccountState('ready');
+      }
+      return m;
+    } catch (error) {
+      if (generation === authRead.current) setAccountState('error');
+      throw error;
+    }
   }, []);
   const tracked = useRef(new Set<string>());
   const currentSnapshot = useRef(snapshot);
@@ -177,7 +223,7 @@ export default function PaperSquare() {
     try {
       await fn();
     } catch (e) {
-      setError((e as Error).message);
+      setError(requestErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -210,7 +256,7 @@ export default function PaperSquare() {
     onFallback = useCallback(() => {
       setFallback(true);
       setReady(true);
-      setPanel("directory");
+      setPanel(current => current || "directory");
     }, []),
     onView = useCallback((id: string) => track("view", id), [track]);
   const close = () => {
@@ -238,7 +284,7 @@ export default function PaperSquare() {
   // Browser preferences and URL state are read after hydration, then synchronized by events.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    void refresh().catch((e) => setError(e.message));
+    if (!initialInventory.current) void refresh().catch(() => {});
     void refreshMe().catch(() => {});
     void api<{ data: { creative: Creative; brandId?: string } } | null>("draft")
       .then((d) => {
@@ -246,8 +292,9 @@ export default function PaperSquare() {
           setCreative(d.data.creative);
           setBrandId(d.data.brandId);
         }
+        setDraftReady(true);
       })
-      .catch(() => {});
+      .catch(() => setDraftError(true));
     track("visit");
     const timer = setInterval(() => {
       if (!document.hidden) void refresh().catch(() => {});
@@ -265,7 +312,8 @@ export default function PaperSquare() {
       if (s) {
         if (SLOTS.some((x) => x.id === s)) {
           setSelected(s);
-          setPanel("detail");
+          setPanel(u.searchParams.get('panel') === 'editor' ? 'editor' : 'detail');
+          setPreview(u.searchParams.get('panel') === 'editor');
           cmd("view", s);
           setIntro(false);
         } else {
@@ -284,7 +332,13 @@ export default function PaperSquare() {
         setIntro(false);
       } else {
         setSelected(null);
-        setPanel(null);
+        setPanel(u.searchParams.get('panel') === 'account' ? 'account' : null);
+      }
+      if (u.searchParams.get('signin') === 'retry') {
+        setPanel('auth');
+        setIntro(false);
+        setAfterAuth(o ? 'checkout' : u.searchParams.get('panel') === 'editor' ? 'editor' : 'account');
+        setError('Sign-in was not completed. Please try again in this browser. Your saved draft is still here.');
       }
     };
     sync();
@@ -296,6 +350,38 @@ export default function PaperSquare() {
     };
   }, [refresh, refreshMe, track, cmd, notify]);
   /* eslint-enable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    let checking = false;
+    const check = async () => {
+      if (document.hidden || checking) return;
+      checking = true;
+      try {
+        await refreshMe();
+      } catch { /* The account panel offers a retry without discarding the session. */ }
+      finally { checking = false; }
+    };
+    window.addEventListener('focus', check);
+    window.addEventListener('pageshow', check);
+    document.addEventListener('visibilitychange', check);
+    return () => {
+      window.removeEventListener('focus', check);
+      window.removeEventListener('pageshow', check);
+      document.removeEventListener('visibilitychange', check);
+    };
+  }, [refreshMe]);
+  useEffect(() => {
+    if (accountState !== 'ready') return;
+    if (panel === 'account' && !me.account) {
+      // Resolve the session before deciding to ask for sign-in.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAfterAuth('account');
+      setPanel('auth');
+    } else if (panel === 'auth' && me.account) {
+      setSent(false);
+      setError('');
+      setPanel(afterAuth);
+    }
+  }, [accountState, panel, me.account, afterAuth]);
   useEffect(() => {
     if (!panel) return;
     joystick.current = { x: 0, y: 0 };
@@ -323,20 +409,25 @@ export default function PaperSquare() {
   useEffect(() => {
     if (panel !== "checkout" || !checkoutId || !accountId) return;
     let active = true;
-    const update = () =>
-      api<Checkout>("checkout/status", { orderId: checkoutId })
+    let pending = false;
+    const update = () => {
+      if (pending) return;
+      pending = true;
+      return api<Checkout>("checkout/status", { orderId: checkoutId })
         .then((o) => {
           if (active) {
+            setCheckoutSyncError("");
             setCheckout(o);
             if (["delivered", "refunded", "refund_pending"].includes(o.state)) {
-              void refresh();
-              void refreshMe();
+              void refresh().catch(() => {});
+              void refreshMe().catch(() => {});
             }
           }
         })
         .catch((e) => {
-          if (active) setError(e.message);
-        });
+          if (active) setCheckoutSyncError(requestErrorMessage(e));
+        }).finally(() => { pending = false; });
+    };
     void update();
     const t = setInterval(() => {
       if (!document.hidden) void update();
@@ -346,18 +437,6 @@ export default function PaperSquare() {
       clearInterval(t);
     };
   }, [panel, checkoutId, accountId, refresh, refreshMe]);
-  const toggleSound = () => {
-    void setBillboardAudio(!sound).then(enabled=>{
-      setSound(enabled);
-      if(enabled)notify('Billboard audio enabled. Walk closer to a video to hear it.');
-    }).catch(()=>notify('Audio could not start. Try the sound button again.'));
-  };
-  useEffect(() => {
-    const pause=()=>{void setBillboardAudio(sound&&!document.hidden).catch(()=>{});};
-    document.addEventListener('visibilitychange',pause);
-    return ()=>document.removeEventListener('visibilitychange',pause);
-  },[sound]);
-  useEffect(()=>()=>{void closeBillboardAudio();},[]);
   const share = async () => {
     const url = `${location.origin}/?billboard=${slot.id}`;
     if (navigator.share)
@@ -470,14 +549,12 @@ export default function PaperSquare() {
           <IconButton
             label="Your account"
             onClick={() => {
-              if (me.account) open("account");
-              else {
-                setAfterAuth("account");
-                open("auth");
-              }
+              setAfterAuth("account");
+              open("account");
+              void refreshMe().catch(() => {});
             }}
           >
-            <UserRound size={19} />
+            {me.account ? <span className="account-avatar" aria-hidden="true">{me.account.email.charAt(0).toUpperCase()}</span> : <UserRound size={19} />}
           </IconButton>
         </div>
       </header>
@@ -528,6 +605,7 @@ export default function PaperSquare() {
           </div>
         )}
       </div>
+      {ready && !fallback && <WelcomeOverlay onComplete={finishWelcome} />}
       <div className="paper-grain" aria-hidden="true" />
       {locked && (
         <div className="reticle" aria-hidden="true">
@@ -544,9 +622,10 @@ export default function PaperSquare() {
           LOCAL EDITION <span>Simulated payments</span>
         </div>
       )}
-      {!panel && intro && (
+      {!panel && intro && (welcomeComplete || fallback) && (
         <section className="intro-card">
           <button
+            type="button"
             className="intro-close"
             aria-label="Dismiss introduction"
             onClick={() => {
@@ -554,7 +633,7 @@ export default function PaperSquare() {
               sessionStorage.setItem("paper-intro", "1");
             }}
           >
-            <X size={15} />
+            <X size={20} strokeWidth={1.75} aria-hidden="true" />
           </button>
           <span className="eyebrow">BIG IDEAS. HAPPY ACCIDENTS.</span>
           <h1>
@@ -651,7 +730,7 @@ export default function PaperSquare() {
         </IconButton>
         <span />
         <IconButton
-          label={sound ? "Mute billboard audio" : "Enable nearby billboard audio"}
+          label={sound ? "Mute all audio" : "Unmute all audio"}
           onClick={toggleSound}
         >
           {sound ? <Volume2 size={17} /> : <VolumeX size={17} />}
@@ -779,9 +858,9 @@ export default function PaperSquare() {
               </IconButton>
             </div>
             <div className="drawer-body" tabIndex={0}>
-              {error && (
+              {(error || syncError || (panel === "checkout" && checkoutSyncError)) && (
                 <div className="notice error" role="alert">
-                  {error}
+                  {error || syncError || checkoutSyncError}
                 </div>
               )}
               {panel === "detail" && (
@@ -1277,7 +1356,10 @@ export default function PaperSquare() {
                 </>
               )}
               {panel === "rules" && <Rules support={snapshot?.support || ""} />}
-              {panel === "editor" && (
+              {panel === "editor" && !draftReady && <p className="panel-intro">
+                {draftError ? <>Your draft could not be loaded. <button className="text-link" onClick={() => location.reload()}>Try again</button></> : 'Loading your saved draft…'}
+              </p>}
+              {panel === "editor" && draftReady && (
                 <CreativeEditor
                   slot={slot}
                   snapshot={snapshot}
@@ -1297,8 +1379,8 @@ export default function PaperSquare() {
                     open("auth");
                   }}
                   onReady={() => {
-                    void refreshMe();
-                    void refresh();
+                    void refreshMe().catch(() => {});
+                    void refresh().catch(() => {});
                   }}
                   onChangePlacement={() => open("directory")}
                   onCheckout={(o) => {
@@ -1312,23 +1394,48 @@ export default function PaperSquare() {
               {panel === "auth" && (
                 <>
                   <div className="auth-illustration">
-                    <Mail size={35} strokeWidth={1} />
+                    {simulation ? <Mail size={35} strokeWidth={1} /> : <UserRound size={35} strokeWidth={1} />}
                   </div>
                   <p className="panel-intro">
                     Your ideas deserve a place here.
                     <br />
-                    Sign in with a one-time email code.
+                    {simulation ? 'Sign in with a one-time email code.' : 'Sign in with Google and pick up where you left off.'}
                   </p>
-                  <form
+                  {!simulation ? (
+                    <button className={googleButton.button} aria-label="Continue with Google" aria-busy={busy} disabled={busy || (afterAuth === 'editor' && !draftReady)} onClick={() => void action(async () => {
+                      if (afterAuth === 'editor') await api('draft', { creative, slotId: slot.id, brandId });
+                      const returnTo = afterAuth === 'checkout' && checkout
+                        ? `/?checkout=${checkout.id}`
+                        : selected ? `/?billboard=${selected}${afterAuth === 'editor' ? '&panel=editor' : ''}`
+                        : '/?panel=account';
+                      const result = await api<{ url: string }>('auth/google', { returnTo });
+                      window.location.assign(result.url);
+                    })}>
+                      <span className={googleButton.logo} aria-hidden="true" />
+                      <span>{busy ? 'Connecting to Google…' : 'Continue with Google'}</span>
+                      {busy && <LoaderCircle className={`spin ${googleButton.spinner}`} size={17} aria-hidden="true" />}
+                    </button>
+                  ) : <form
                     onSubmit={(e) => {
                       e.preventDefault();
                       void action(async () => {
-                        if (!sent) {
-                          const r = await api<{ localCode?: string }>(
+                        if (!sent || !localCode) {
+                          if (afterAuth === 'editor')
+                            await api('draft', { creative, slotId: slot.id, brandId });
+                          const returnTo = afterAuth === 'checkout' && checkout
+                            ? `/?checkout=${checkout.id}`
+                            : selected ? `/?billboard=${selected}${afterAuth === 'editor' ? '&panel=editor' : ''}`
+                            : '/?panel=account';
+                          const r = await api<{ localCode?: string; retryAfter?: number }>(
                             "auth/send",
-                            { email },
-                          );
+                            { email: email.trim(), returnTo },
+                          ).catch(error => {
+                            if (error instanceof RequestError && error.retryAfter) waitToResend(error.retryAfter);
+                            throw error;
+                          });
+                          if (r.retryAfter) waitToResend(r.retryAfter);
                           setSent(true);
+                          setCode("");
                           setLocalCode(r.localCode || "");
                         } else {
                           await api("auth/verify", { email, code });
@@ -1350,14 +1457,25 @@ export default function PaperSquare() {
                         type="email"
                         autoComplete="email"
                         value={email}
+                        disabled={busy}
                         onChange={(e) => {
                           setEmail(e.target.value);
                           setSent(false);
+                          setCode("");
+                          setResendUntil(0);
+                          setResendSeconds(0);
                         }}
                         placeholder="you@yourbrand.com"
                       />
                     </label>
                     {sent && (
+                      <p className="fine" role="status">
+                        {localCode
+                          ? 'Check your inbox for your six-digit sign-in code, then enter it below.'
+                          : 'Check your inbox and open the newest sign-in link in this browser. Your draft is saved, and the link will bring you back to where you left off.'}
+                      </p>
+                    )}
+                    {sent && localCode && (
                       <label className="field">
                         One-time code
                         <input
@@ -1382,17 +1500,22 @@ export default function PaperSquare() {
                         </span>
                       </div>
                     )}
-                    <button className="primary full" disabled={busy}>
+                    <button className="primary full" disabled={busy || (resendSeconds > 0 && !localCode)}>
                       {busy ? (
                         <LoaderCircle className="spin" size={17} />
-                      ) : sent ? (
+                      ) : resendSeconds > 0 && !localCode ? (
+                        `Try again in ${Math.floor(resendSeconds / 60)}:${String(resendSeconds % 60).padStart(2, '0')}`
+                      ) : sent && localCode ? (
                         "Verify & continue"
                       ) : (
-                        "Send sign-in code"
+                        simulation ? "Send sign-in code" : sent ? "Send another sign-in link" : "Send sign-in link"
                       )}
                       <ArrowRight size={17} />
                     </button>
-                  </form>
+                  </form>}
+                  {!simulation && afterAuth === 'editor' && !draftReady && <p className="fine" role="status">
+                    {draftError ? <>Your draft could not be loaded. <button className="text-link" onClick={() => location.reload()}>Try again</button></> : 'Loading your saved draft…'}
+                  </p>}
                   <p className="fine">
                     Your email is private and never appears in the directory.
                     Your draft is preserved through sign-in.
@@ -1405,8 +1528,19 @@ export default function PaperSquare() {
                   )}
                 </>
               )}
-              {panel === "account" && (
+              {panel === "account" && !me.account && (
+                <div className="account-loading" role="status">
+                  {accountState === 'error' ? <>
+                    <p>We couldn’t load your account. Please try again.</p>
+                    <button className="secondary full" onClick={() => void refreshMe().catch(() => {})}>Retry account</button>
+                  </> : <><LoaderCircle className="spin" size={22} /><p>Loading your account…</p></>}
+                </div>
+              )}
+              {panel === "account" && me.account && (
                 <>
+                  {accountState === 'error' && <div className="notice" role="status">
+                    <span>Your account could not be refreshed. <button className="text-link" onClick={() => void refreshMe().catch(() => {})}>Retry account</button></span>
+                  </div>}
                   <div className="account-strip">
                     <div className="brand-monogram">
                       <UserRound size={23} />
@@ -1422,6 +1556,7 @@ export default function PaperSquare() {
                           await api("auth/logout", {});
                           authRead.current++;
                           setMe(emptyMe);
+                          setAccountState('ready');
                           setCreative({ ...EMPTY_CREATIVE });
                           setBrandId(undefined);
                           setApprovedId("");
@@ -1475,8 +1610,8 @@ export default function PaperSquare() {
                   snapshot={snapshot}
                   notify={notify}
                   onChanged={() => {
-                    void refresh();
-                    void refreshMe();
+                    void refresh().catch(() => {});
+                    void refreshMe().catch(() => {});
                   }}
                 />
               )}
@@ -1602,7 +1737,7 @@ export default function PaperSquare() {
                       <button
                         className="secondary full"
                         onClick={() => {
-                          void refreshMe();
+                          void refreshMe().catch(() => {});
                           open("account");
                         }}
                       >
@@ -1641,8 +1776,9 @@ export default function PaperSquare() {
                   </label>
                   <button className="secondary full" onClick={toggleSound}>
                     {sound ? <Volume2 size={16} /> : <VolumeX size={16} />}
-                    Nearby billboard audio {sound ? "on" : "off"}
+                    {sound ? "Mute all audio" : "Unmute all audio"}
                   </button>
+                  <p className="fine">Controls the welcome music and nearby billboard sound.</p>
                   <div className="section-heading">
                     <h3>A little field guide</h3>
                   </div>
@@ -1737,10 +1873,10 @@ export default function PaperSquare() {
           </button>
         </div>
       )}
-      {error && !panel && (
-        <div className="toast error" role="alert">
-          {error}
-          <button onClick={() => setError("")} aria-label="Dismiss error">
+      {(error || syncError) && !panel && (
+        <div className="toast error" role={error ? "alert" : "status"}>
+          {error || syncError}
+          <button onClick={() => { setError(""); setSyncError(""); }} aria-label="Dismiss error">
             <X size={15} />
           </button>
         </div>

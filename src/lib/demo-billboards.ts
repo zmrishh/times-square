@@ -1,6 +1,9 @@
 import { Creative,EMPTY_CREATIVE } from './registry';
 /** User-provided preview clips. These are house inventory, never sponsors. */
 export const DEMO_BILLBOARDS:Record<string,Creative>={
+  'tsq-007':{...EMPTY_CREATIVE,name:'Steve Jobs introduces iPhone · demo',url:'https://www.apple.com',mode:'video',image:'/demo/iphone-2007-introduction.mp4',poster:'/demo/iphone-2007-introduction.webp',description:'The supplied 2007 iPhone introduction clip featuring Steve Jobs. Demo artwork, not a paid sponsorship. This placement is available to buy.'},
+  'tsq-006':{...EMPTY_CREATIVE,name:'GTA VI Trailer 1 · demo',url:'https://www.rockstargames.com',mode:'video',image:'/demo/gta-vi-trailer.mp4',poster:'/demo/gta-vi-trailer.webp',description:'The full GTA VI Trailer 1 supplied by the site owner. Demo artwork, not a paid sponsorship. This placement is available to buy.'},
+  'tsq-044':{...EMPTY_CREATIVE,name:'iPhone X trailer · demo',url:'https://www.apple.com',mode:'video',image:'/demo/iphone-x-trailer.mp4',poster:'/demo/iphone-x-trailer.webp',description:'The full iPhone X trailer supplied by the site owner. Demo artwork, not a paid sponsorship. This placement is available to buy.'},
   'tsq-026':{...EMPTY_CREATIVE,name:'OpenAI clip · demo',url:'https://openai.com',mode:'video',image:'/demo/openai-preview.mp4',poster:'/demo/openai-preview.webp',description:'A 30-second preview excerpt supplied by the site owner. Demo artwork, not a paid sponsorship. This placement is available to buy.'},
   'tsq-009':{...EMPTY_CREATIVE,name:'Cluely clip · demo',url:'https://cluely.com',mode:'video',image:'/demo/cluely-preview.mp4',poster:'/demo/cluely-preview.webp',description:'A 30-second preview excerpt supplied by the site owner. Demo artwork, not a paid sponsorship. This placement is available to buy.'},
 };

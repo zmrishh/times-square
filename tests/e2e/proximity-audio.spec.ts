@@ -14,18 +14,23 @@ test('demo videos remain unsold and proximity audio becomes audible only nearby'
  const videos=async()=>JSON.parse(await canvas.getAttribute('data-videos')||'[]') as {slot:string;time:number;audioGain:number;audioRms:number;distance:number}[];
  await expect.poll(async()=>(await videos()).some(v=>v.slot==='tsq-026'&&v.time>0),{timeout:20000}).toBe(true);
  expect((await videos()).every(v=>v.audioGain===0)).toBe(true);
- await page.getByRole('button',{name:'Enable nearby billboard audio',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Mute all audio',exact:true})).toBeVisible();
  await expect.poll(async()=>(await videos()).find(v=>v.slot==='tsq-026')?.distance||999).toBeLessThan(100);
  await expect.poll(async()=>(await videos()).find(v=>v.slot==='tsq-026')?.distance||0).toBeGreaterThan(24);
  const far=await videos();expect(far.every(v=>v.audioGain===0)).toBe(true);
- await page.keyboard.down('w');await page.waitForTimeout(2400);await page.keyboard.up('w');
+ await page.keyboard.down('w');
+ try { await expect.poll(async()=>(await videos()).find(v=>v.slot==='tsq-026')?.distance||999,{timeout:15000}).toBeLessThan(19); }
+ finally { await page.keyboard.up('w'); }
  await expect.poll(async()=>(await videos()).find(v=>v.slot==='tsq-026')?.audioGain||0,{timeout:20000}).toBeGreaterThan(0.05);
  await expect.poll(async()=>(await videos()).find(v=>v.slot==='tsq-026')?.audioRms||0,{timeout:20000}).toBeGreaterThan(0.0001);
  const near=await videos();
  await mkdir('artifacts/media',{recursive:true});await page.screenshot({path:'artifacts/media/proximity-demo-near.png'});
- await page.keyboard.down('s');await page.waitForTimeout(2600);await page.keyboard.up('s');
+ await page.keyboard.down('s');
+ try { await expect.poll(async()=>(await videos()).find(v=>v.slot==='tsq-026')?.distance||0,{timeout:15000}).toBeGreaterThan(25); }
+ finally { await page.keyboard.up('s'); }
  await expect.poll(async()=>(await videos()).find(v=>v.slot==='tsq-026')?.audioGain||0).toBe(0);
- await page.getByRole('button',{name:'Mute billboard audio',exact:true}).click();
+ await page.getByRole('button',{name:'Mute all audio',exact:true}).click();
+ await expect.poll(()=>page.locator('audio').evaluate((a:HTMLAudioElement)=>a.paused&&a.muted)).toBe(true);
  await expect.poll(async()=>(await videos()).every(v=>v.audioGain===0)).toBe(true);
  const after=await(await request.get('/api/public')).json();
  for(const id of ['tsq-026','tsq-009'])expect(after.slots.find((s:{id:string})=>s.id===id).brandId).toBeNull();

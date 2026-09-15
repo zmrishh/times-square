@@ -4,6 +4,7 @@ import { readFile, mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
 import { SLOTS } from "../lib/registry";
 import { mode, validateProduction } from "./config";
+import { databaseSchema, inDatabaseSchema } from "./database-schema.mjs";
 export type Row = Record<string, unknown>;
 export interface DB {
   query<T extends Row = Row>(
@@ -19,6 +20,7 @@ type Store = {
 const globalDB = globalThis as typeof globalThis & { paperDB?: Promise<Store> };
 async function init(): Promise<Store> {
   validateProduction();
+  const schema = databaseSchema(process.env.PAYMENT_MODE);
   let store: Store;
   if (process.env.DATABASE_URL) {
     const max = Number(process.env.DATABASE_POOL_MAX || 8);
@@ -30,23 +32,23 @@ async function init(): Promise<Store> {
       connectionTimeoutMillis: 10000,
       statement_timeout: 30000,
     });
-    store = {
-      db: pool,
-      close: () => pool.end(),
-      transaction: async (fn) => {
+    // pg removes failed idle clients itself; without a listener an idle
+    // network failure is emitted as an unhandled process error.
+    pool.on("error", () =>
+      console.warn("Database idle connection closed; the pool will reconnect."),
+    );
+    const transaction: Store["transaction"] = async (fn) => {
         const c = await pool.connect();
         try {
-          await c.query("BEGIN");
-          const result = await fn(c);
-          await c.query("COMMIT");
-          return result;
-        } catch (e) {
-          await c.query("ROLLBACK");
-          throw e;
+          return await inDatabaseSchema(c, schema, fn);
         } finally {
           c.release();
         }
-      },
+    };
+    store = {
+      db: schema === 'public' ? pool : { query: (sql, params) => transaction(c => c.query(sql, params)) },
+      close: () => pool.end(),
+      transaction,
     };
   } else {
     if (process.env.NODE_ENV === "production")
@@ -63,34 +65,45 @@ async function init(): Promise<Store> {
       transaction: (fn) => p.transaction((tx) => fn(tx)),
     };
   }
-  // Automatic migrations are local only. Production migration is an explicit deployment step.
-  if (!process.env.DATABASE_URL) {
-    for (const file of (await readdir(path.join(process.cwd(), "migrations")))
-      .filter((f) => f.endsWith(".sql"))
-      .sort())
-      await (store.db as PGlite).exec(
-        await readFile(path.join(process.cwd(), "migrations", file), "utf8"),
-      );
-  }
-  if (process.env.NODE_ENV === "production") {
-    const configured = mode();
-    const foreign = await store.db.query(
-      "SELECT id FROM orders WHERE mode<>$1 LIMIT 1",
-      [configured],
-    );
-    if (foreign.rows.length) {
-      await store.close();
-      throw new Error(
-        "PAYMENT_MODE differs from existing orders. Use a separate database for live and test environments.",
-      );
+  try {
+    // Automatic migrations are local only. Production migration is an explicit deployment step.
+    if (!process.env.DATABASE_URL) {
+      if (schema !== 'public') throw new Error('Live mode requires a hosted database');
+      for (const file of (await readdir(path.join(process.cwd(), "migrations")))
+        .filter((f) => f.endsWith(".sql"))
+        .sort())
+        await (store.db as PGlite).exec(
+          await readFile(path.join(process.cwd(), "migrations", file), "utf8"),
+        );
     }
-  }
-  for (const s of SLOTS)
+    if (process.env.NODE_ENV === "production") {
+      const configured = mode();
+      if (schema === 'paper_live') {
+        const binding = await store.db.query("SELECT value->>'mode' AS mode FROM settings WHERE id='environment'");
+        if (binding.rows[0]?.mode !== 'dodo-live') throw new Error('Live database has not been provisioned');
+      }
+      const foreign = await store.db.query(
+        "SELECT id FROM orders WHERE mode<>$1 LIMIT 1",
+        [configured],
+      );
+      if (foreign.rows.length) {
+        throw new Error(
+          "PAYMENT_MODE differs from existing orders. Live and test records must be isolated.",
+        );
+      }
+    }
+    // One round trip on cold start instead of 72 sequential inserts. Existing
+    // inventory, prices and ownership are preserved by ON CONFLICT DO NOTHING.
     await store.db.query(
-      "INSERT INTO slots(id,opening) VALUES ($1,$2) ON CONFLICT DO NOTHING",
-      [s.id, s.opening],
+      `INSERT INTO slots(id,opening) VALUES ${SLOTS.map((_, index) => `($${index * 2 + 1},$${index * 2 + 2})`).join(",")} ON CONFLICT DO NOTHING`,
+      SLOTS.flatMap((slot) => [slot.id, slot.opening]),
     );
-  return store;
+    return store;
+  } catch (error) {
+    // A failed initialization must not leave a pool behind before retrying.
+    await store.close().catch(() => {});
+    throw error;
+  }
 }
 export async function database() {
   globalDB.paperDB ??= init().catch((e) => {

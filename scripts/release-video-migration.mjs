@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { Pool } from 'pg';
+import { databaseSchema } from '../src/server/database-schema.mjs';
 
 const protectedTables = ['slots', 'orders', 'payments', 'brands', 'creatives', 'assets', 'allocations', 'totals'];
 async function fingerprint(db) {
@@ -13,9 +14,11 @@ async function fingerprint(db) {
   return result;
 }
 
-export async function applyVideoRelease(db, bucket = 'paper-assets') {
+export async function applyVideoRelease(db, bucket = 'paper-assets', schema = 'public') {
+  if (!['public', 'paper_live'].includes(schema)) throw new Error('Invalid application schema');
   await db.query('BEGIN');
   try {
+    await db.query(`SET LOCAL search_path = ${schema}`);
     await db.query("SET LOCAL lock_timeout='10s'");
     await db.query("SET LOCAL statement_timeout='30s'");
     await db.query(`LOCK TABLE ${protectedTables.join(',')} IN SHARE ROW EXCLUSIVE MODE`);
@@ -51,7 +54,7 @@ async function main() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, connectionTimeoutMillis: 15000 });
   try {
     const client = await pool.connect();
-    try { console.log(JSON.stringify(await applyVideoRelease(client, process.env.SUPABASE_STORAGE_BUCKET || 'paper-assets'))); }
+    try { console.log(JSON.stringify(await applyVideoRelease(client, process.env.SUPABASE_STORAGE_BUCKET || 'paper-assets', databaseSchema(process.env.PAYMENT_MODE)))); }
     finally { client.release(); }
   } finally { await pool.end(); }
 }

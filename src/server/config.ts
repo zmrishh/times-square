@@ -60,6 +60,8 @@ export function validateProduction() {
   if (process.env.NODE_ENV !== "production") return;
   origin();
   mode();
+  if (mode() === 'dodo-live' && process.env.SUPABASE_STORAGE_BUCKET !== 'paper-assets-live')
+    throw new Error('Live payments require the dedicated paper-assets-live storage bucket.');
   if (process.env.AUTH_MODE !== "supabase")
     throw new Error("Production requires AUTH_MODE=supabase.");
   for (const key of ["DATABASE_URL", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "DODO_PAYMENTS_API_KEY", "DODO_PAYMENTS_WEBHOOK_KEY", "DODO_PRODUCT_ID", "DODO_BUSINESS_ID", "JOB_SECRET", "SUPPORT_EMAIL"])

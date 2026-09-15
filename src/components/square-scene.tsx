@@ -196,12 +196,12 @@ function Billboard({
   const displayCreative=preview || state?.creative || (state?.available && !state.brandId ? DEMO_BILLBOARDS[slot.id] : undefined);
   const videoTexture = useBillboardVideo(slot, displayCreative, paused, reduced,sound);
   const [tex, setTex] = useState<THREE.CanvasTexture | null>(null);
-  const [resolution, setResolution] = useState(256);
-  const sampleAt = useRef(slot.art * 0.017);
+  const [resolution, setResolution] = useState(512);
+  const sampleAt = useRef(1);
   const probe = useMemo(() => new THREE.Vector3(), []);
   useFrame(({ camera, clock }, delta) => {
     sampleAt.current += delta;
-    if (sampleAt.current > 1) {
+    if (sampleAt.current > 1 && tex) {
       sampleAt.current = 0;
       let pixels = 0;
       for (const s of slot.segments) {
@@ -265,6 +265,7 @@ function Billboard({
         texture.colorSpace = THREE.SRGBColorSpace;
         texture.anisotropy = 4;
         texture.wrapS = THREE.RepeatWrapping;
+        texture.userData.creative = displayCreative;
         setTex(texture);
       }
     });
@@ -294,7 +295,7 @@ function Billboard({
           )}
           <mesh
             geometry={geometries[i]}
-            userData={{ slotId: slot.id }}
+            userData={{ slotId: slot.id, mediaReady: !!videoTexture || (!!tex && tex.userData.creative === displayCreative) }}
             onPointerOver={(e) => {
               e.stopPropagation();
               onHover(slot.id);
@@ -457,6 +458,66 @@ function PavementMarkings() {
     </instancedMesh>
   );
 }
+function RedSteps() {
+  const rise = 0.18;
+  const run = 0.58;
+  const slope = Math.atan(rise / run);
+  return (
+    <group name="TKTS red steps">
+      <mesh position={[0, 0.06, -71.7]}>
+        <boxGeometry args={[16.4, 0.12, 17.8]} />
+        <meshBasicMaterial color="#cecfc7" />
+      </mesh>
+      {Array.from({ length: 27 }, (_, i) => {
+        const height = (i + 1) * rise + 0.12;
+        const z = -64 - i * run;
+        return <group key={i}>
+          <mesh position={[0, height / 2, z]}>
+            <boxGeometry args={[15, height, run + 0.005]} />
+            <meshBasicMaterial color="#ae1831" />
+          </mesh>
+          <mesh position={[0, height + 0.012, z]}>
+            <boxGeometry args={[15.04, 0.025, run]} />
+            <meshBasicMaterial color={i % 3 === 0 ? '#ef3c49' : '#df293c'} />
+          </mesh>
+          <mesh position={[0, height - 0.025, z + run / 2 + 0.008]}>
+            <boxGeometry args={[15.04, 0.035, 0.018]} />
+            <meshBasicMaterial color="#ff7380" />
+          </mesh>
+          {(i % 3 === 0 ? [-5, -2.5, 0, 2.5, 5] : []).map(x => <mesh key={x} position={[x, height + 0.027, z]}>
+            <boxGeometry args={[0.012, 0.006, run]} />
+            <meshBasicMaterial color="#b62035" />
+          </mesh>)}
+        </group>;
+      })}
+      {[-7.7, 7.7].map(x => <group key={x}>
+        <mesh position={[x, 3.07, -71.54]} rotation={[slope, 0, 0]}>
+          <boxGeometry args={[0.06, 1.05, 16.4]} />
+          <meshBasicMaterial color="#b6d2d4" transparent opacity={0.28} depthWrite={false} />
+        </mesh>
+        <mesh position={[x, 3.64, -71.54]} rotation={[slope, 0, 0]}>
+          <boxGeometry args={[0.075, 0.065, 16.6]} />
+          <meshBasicMaterial color="#879a9c" />
+        </mesh>
+        {[0, 5, 10, 15, 20, 26].map(i => <mesh key={i} position={[x, 0.78 + i * rise, -64 - i * run]}>
+          <boxGeometry args={[0.055, 1.14, 0.055]} />
+          <meshBasicMaterial color="#a2b2b2" />
+        </mesh>)}
+      </group>)}
+      <mesh position={[0, 2.47, -79.52]}>
+        <boxGeometry args={[15.4, 4.7, 0.25]} />
+        <meshBasicMaterial color="#e9e6df" />
+        <Edges color="#abb7b6" />
+      </mesh>
+      <Label text="tkts" position={[0, 3.5, -79.66]} width={6} height={1.8}
+        bg="#e9e6df" color="#cc1631" rotation={Math.PI} />
+      <Label text="tkts" position={[-7.82, 2.55, -75.8]} width={4} height={1.5}
+        bg="#e9e6df" color="#cc1631" rotation={-Math.PI / 2} />
+      <Label text="tkts" position={[7.82, 2.55, -75.8]} width={4} height={1.5}
+        bg="#e9e6df" color="#cc1631" rotation={Math.PI / 2} />
+    </group>
+  );
+}
 function Street() {
   return (
     <group>
@@ -473,22 +534,7 @@ function Street() {
         <meshBasicMaterial color="#f2eee2" />
       </mesh>
       <PavementMarkings />
-      {Array.from({ length: 22 }, (_, i) => (
-        <mesh key={`step${i}`} position={[0, 0.08 + i * 0.14, -65 - i * 0.65]}>
-          <boxGeometry args={[13, 0.25, 0.75]} />
-          <meshBasicMaterial color={i % 2 ? "#bf443b" : "#d35445"} />
-          <Edges color="#913c39" />
-        </mesh>
-      ))}
-      <Label
-        text="tkts"
-        position={[0, 2.4, -81]}
-        width={8}
-        height={2.5}
-        bg="#c9473d"
-        color="#fff2df"
-        rotation={Math.PI}
-      />
+      <RedSteps />
       <mesh position={[0, 1, -58]}>
         <boxGeometry args={[2.8, 2, 2.8]} />
         <meshBasicMaterial color="#e6e1d1" />
@@ -632,31 +678,13 @@ function Street() {
   );
 }
 function Ambient({ reduced }: { reduced: boolean }) {
-  const people = useRef<THREE.InstancedMesh>(null);
   const taxis = useRef<THREE.Group>(null);
-  const dummy = useMemo(() => new THREE.Object3D(), []);
   useFrame(({ clock }) => {
     const time = reduced || document.hidden ? 0 : clock.elapsedTime;
-    if (people.current) {
-      for (let i = 0; i < 36; i++) {
-        const x = (i % 2 ? -1 : 1) * (8 + ((i * 7) % 12));
-        const z = ((i * 17 + time * (i % 2 ? 1 : -1) * 0.38 + 300) % 175) - 85;
-        dummy.position.set(x, 0.9, z);
-        dummy.scale.set(0.32, 1.7, 0.28);
-        dummy.rotation.y = i;
-        dummy.updateMatrix();
-        people.current.setMatrixAt(i, dummy.matrix);
-      }
-      people.current.instanceMatrix.needsUpdate = true;
-    }
     if (taxis.current) taxis.current.position.z = ((time * 2.6) % 180) - 80;
   });
   return (
     <group>
-      <instancedMesh ref={people} args={[undefined, undefined, 36]}>
-        <capsuleGeometry args={[0.5, 0.4, 2, 5]} />
-        <meshBasicMaterial color="#819194" />
-      </instancedMesh>
       <group ref={taxis} position={[20.5, 0, 15]}>
         <mesh position={[0, 0.65, 0]}>
           <boxGeometry args={[1.7, 0.75, 4]} />
@@ -1005,13 +1033,33 @@ function Controls({
 function Ready({
   onReady,
   onFallback,
+  hasInventory,
 }: {
   onReady: () => void;
   onFallback: () => void;
+  hasInventory: boolean;
 }) {
-  const { gl } = useThree();
+  const { gl, camera, scene } = useThree();
+  const announced = useRef(false);
+  const frustum = useMemo(() => new THREE.Frustum(), []);
+  const matrix = useMemo(() => new THREE.Matrix4(), []);
+  useFrame(() => {
+    if (announced.current || !hasInventory) return;
+    camera.updateMatrixWorld();
+    scene.updateMatrixWorld();
+    frustum.setFromProjectionMatrix(matrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    let pending = false;
+    scene.traverse(object => {
+      if (object instanceof THREE.Mesh && object.userData.slotId &&
+          frustum.intersectsObject(object) && !object.userData.mediaReady) pending = true;
+    });
+    if (!pending) {
+      announced.current = true;
+      gl.domElement.dataset.mediaReady = 'true';
+      onReady();
+    }
+  });
   useEffect(() => {
-    onReady();
     const el = gl.domElement;
     const lost = (e: Event) => {
       e.preventDefault();
@@ -1019,7 +1067,7 @@ function Ready({
     };
     el.addEventListener("webglcontextlost", lost);
     return () => el.removeEventListener("webglcontextlost", lost);
-  }, [gl, onReady, onFallback]);
+  }, [gl, onFallback]);
   return null;
 }
 export default function SquareScene(props: Props) {
@@ -1100,7 +1148,7 @@ export default function SquareScene(props: Props) {
       <BillboardStructure />
       <Ambient reduced={props.reduced} />
       <Controls {...props} />
-      <Ready onReady={props.onReady} onFallback={props.onFallback} />
+      <Ready onReady={props.onReady} onFallback={props.onFallback} hasInventory={props.slots.length > 0} />
     </Canvas>
   );
 }

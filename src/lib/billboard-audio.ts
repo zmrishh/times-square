@@ -16,9 +16,18 @@ export function billboardDistance(slot:Slot,position:Vec3) {
   }));
 }
 let context:AudioContext|null=null;
+let requested = false;
 export const billboardAudioContext=()=>context;
 export async function setBillboardAudio(enabled:boolean) {
-  if(enabled){context??=new AudioContext();await context.resume();return context.state==='running';}
+  requested = enabled;
+  if(enabled){
+    if (!context || context.state === 'closed') context = new AudioContext();
+    const current = context;
+    await current.resume();
+    if (context !== current || current.state === 'closed') return false;
+    if (!requested) { await current.suspend(); return false; }
+    return current.state === 'running';
+  }
   await context?.suspend();return false;
 }
-export async function closeBillboardAudio(){await context?.close();context=null;}
+export async function closeBillboardAudio(){const current=context;context=null;requested=false;await current?.close();}

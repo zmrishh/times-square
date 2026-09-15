@@ -4,12 +4,12 @@ DO $$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['settings','accounts','sessions','challenges','drafts','assets','brands','creatives','slots','totals','orders','payments','allocations','history','webhook_events','refunds','disputes','jobs','audit','analytics','rate_limits','reports'] LOOP
-    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',t);
+    EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY',current_schema(),t);
     IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') THEN
-      EXECUTE format('REVOKE ALL ON public.%I FROM anon',t);
+      EXECUTE format('REVOKE ALL ON %I.%I FROM anon',current_schema(),t);
     END IF;
     IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN
-      EXECUTE format('REVOKE ALL ON public.%I FROM authenticated',t);
+      EXECUTE format('REVOKE ALL ON %I.%I FROM authenticated',current_schema(),t);
     END IF;
   END LOOP;
 END $$;

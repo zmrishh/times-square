@@ -1,5 +1,6 @@
 import PaperSquare from "@/components/paper-square";
-import { SLOTS } from "@/lib/registry";
+import { SLOTS, HERO } from "@/lib/registry";
+import { DEMO_BILLBOARDS } from '@/lib/demo-billboards';
 import { publicSnapshot } from "@/server/content";
 import { origin } from "@/server/config";
 export async function generateMetadata({
@@ -40,6 +41,21 @@ export async function generateMetadata({
     },
   };
 }
-export default function Page() {
-  return <PaperSquare />;
+export const dynamic = 'force-dynamic';
+
+export default async function Page() {
+  // Ship public inventory with the page instead of waiting for hydration and
+  // another round trip before requesting any billboard media.
+  const snapshot = await publicSnapshot().catch(() => null);
+  const media = snapshot?.slots.flatMap(state => {
+    const creative = state.creative || (state.available && !state.brandId ? DEMO_BILLBOARDS[state.id] : undefined);
+    const slot = SLOTS.find(slot => slot.id === state.id)!;
+    const source = creative?.mode === 'video' ? creative.poster : creative?.image;
+    return source ? [{ source, distance: Math.hypot(slot.look[0] - HERO.position[0], slot.look[2] - HERO.position[2]) }] : [];
+  }).sort((a, b) => a.distance - b.distance).slice(0, 8) || [];
+  return <>
+    {[...new Set(media.map(m => m.source))].map(source => <link key={source} rel="preload" as="image" crossOrigin="anonymous"
+      href={source.startsWith('/api/assets/') ? `${source}?size=512` : source} />)}
+    <PaperSquare initialSnapshot={snapshot} />
+  </>;
 }

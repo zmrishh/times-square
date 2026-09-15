@@ -2,11 +2,11 @@ import { prepareImage, prepareVideo } from "@/server/media";
 import { beginVideo,completeVideo,localVideoSource } from '@/server/video-uploads';
 import { byteRange, MAX_MEDIA_BYTES, MAX_POSTER_BYTES } from "@/lib/media";
 import { boundedBody } from "@/server/request-body";
-import { RateLimitError } from "@/server/errors";
+import { RateLimitError, isDatabaseUnavailable } from "@/server/errors";
 import { financialReport } from "@/server/financial-report";
 import { adjustPayment } from "@/server/auction";
 import { reconcilePayment } from "@/server/payments";
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import {
@@ -14,6 +14,7 @@ import {
   admin,
   anonymous,
   sendCode,
+  startGoogleSignIn,
   verifyCode,
   hash,
   rate,
@@ -53,6 +54,12 @@ const json = (v: unknown, status = 200) =>
 const uuid = z.string().uuid();
 const uploadDirectory = () => process.env.PAPER_UPLOAD_DIR || path.join(process.cwd(), ".data", "uploads");
 function fail(e: unknown) {
+  if (isDatabaseUnavailable(e)) {
+    console.warn("Database temporarily unavailable; request can be retried.");
+    return Response.json({ error: "The square is reconnecting. Please try again shortly." }, {
+      status: 503, headers: { "Cache-Control": "no-store", "Retry-After": "2" },
+    });
+  }
   if (e instanceof RateLimitError)
     return Response.json({ error: e.message, retryAfter: e.retryAfter }, {
       status: 429,
@@ -356,6 +363,10 @@ export async function POST(
         );
         await job(db, `event:${eventId}`, "event", { eventId, mode: m });
       });
+      if (m === 'dodo-live') after(async () => {
+        try { await runJobs(); }
+        catch { console.error('Deferred payment processing failed; durable worker will retry.'); }
+      });
       return json({ received: true });
     }
     if (p[0] === "jobs") {
@@ -364,6 +375,8 @@ export async function POST(
         (process.env.NODE_ENV !== "production" ? "local-worker-only" : "");
       if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`)
         return json({ error: "Unauthorized" }, 401);
+      const expectedMode = req.headers.get('x-paper-payment-mode');
+      if (expectedMode && expectedMode !== mode()) return json({ error: 'Worker environment mismatch' }, 409);
       return json(await runJobs());
     }
     csrf(req);
@@ -455,8 +468,9 @@ export async function POST(
         c.delete("paper_draft");
         return json({ ok: true });
       }
+      if (p[1] === "google") return json(await startGoogleSignIn(z.string().max(500).optional().parse(body.returnTo)));
       const email = z.email().max(254).parse(body.email).toLowerCase();
-      if (p[1] === "send") return json(await sendCode(email));
+      if (p[1] === "send") return json(await sendCode(email, z.string().max(500).optional().parse(body.returnTo)));
       if (p[1] === "verify")
         return json(
           await verifyCode(

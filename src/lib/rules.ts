@@ -23,7 +23,7 @@ export function nextMinimum(
     ? opening
     : leader +
         (preset === "double"
-          ? leader
+          ? Math.max(leader, RULES.minimumIncrement)
           : RULES.minimumIncrement);
 }
 export function quoteAmount(

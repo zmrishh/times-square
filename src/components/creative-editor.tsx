@@ -1,4 +1,5 @@
 "use client";
+import { requestErrorMessage } from "@/lib/api-client";
 import {
   useEffect,
   useRef,
@@ -91,7 +92,7 @@ export function CreativeEditor(p: Props) {
     try {
       await fn();
     } catch (e) {
-      setError((e as Error).message);
+      setError(requestErrorMessage(e));
     } finally {
       setBusy(false);
     }

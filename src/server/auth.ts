@@ -3,6 +3,8 @@ import { createHash, randomBytes, randomInt } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { id, query, tx, one, DB } from "./db";
 import { isLocal, required } from "./config";
+import { requestEmailLink, exchangeEmailLink } from './email-link';
+import { requestGoogleSignIn, exchangeGoogleSignIn } from './google-auth';
 import { RateLimitError } from "./errors";
 export type Account = {
   id: string;
@@ -65,16 +67,11 @@ export function supabase() {
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
 }
-export async function sendCode(email: string) {
-  await tx((db) => rate(db, `auth:${hash(email)}`, 5, 900));
+export async function sendCode(email: string, returnTo?: string) {
   if (!isLocal()) {
-    const { error } = await supabase().auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: true },
-    });
-    if (error) throw new Error("Unable to send the sign-in email.");
-    return { sent: true };
+    return requestEmailLink(email, returnTo, await cookies(), () => tx((db) => rate(db, `auth:${hash(email)}`, 5, 900)));
   }
+  await tx((db) => rate(db, `auth:${hash(email)}`, 5, 900));
   const code = String(randomInt(100000, 999999));
   await query(
     `INSERT INTO challenges(email,code_hash,expires_at) VALUES($1,$2,now()+interval '10 minutes') ON CONFLICT(email) DO UPDATE SET code_hash=$2,expires_at=now()+interval '10 minutes',attempts=0`,
@@ -104,6 +101,31 @@ export async function verifyCode(email: string, code: string) {
     if (error || !data.user?.email || data.user.email.toLowerCase() !== email)
       throw new Error("The code is invalid or expired.");
   }
+  return establishSession(email);
+}
+
+export async function startGoogleSignIn(returnTo?: string) {
+  const owner = await anonymous();
+  await tx(db => rate(db, `google:${owner}`, 20, 900));
+  return requestGoogleSignIn(returnTo, await cookies());
+}
+
+export async function completeSignIn(code: string) {
+  const store = await cookies();
+  const { email, returnTo } = store.get('paper_google_verifier')
+    ? await exchangeGoogleSignIn(code, store)
+    : await exchangeEmailLink(code, store);
+  await establishSession(email);
+  store.delete('paper_auth_email');
+  store.delete('paper_auth_return');
+  store.delete('paper_auth_verifier');
+  store.delete('paper_auth_sent_at');
+  store.delete('paper_google_verifier');
+  store.delete('paper_google_return');
+  return returnTo;
+}
+
+async function establishSession(email: string) {
   const token = randomBytes(32).toString("hex");
   const owner = await anonymous();
   const a = await tx(async (db) => {

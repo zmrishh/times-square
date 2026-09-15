@@ -39,7 +39,7 @@ export function canWalk(x: number, z: number) {
     )
   )
     return false;
-  if (Math.abs(x) < 7 && z < -63 && z > -84) return false;
+  if (Math.abs(x) < 8.4 && z < -62.5 && z > -81.3) return false;
   // Statue plinth; street furniture stays outside the viewing positions.
   return !(Math.abs(x) < 2 && Math.abs(z + 58) < 2);
 }

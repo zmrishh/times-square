@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test tests/financial.test.ts tests/inventory.test.ts tests/audit.test.ts tests/media.test.ts tests/video-pricing.test.ts tests/audio.test.ts tests/release-migration.test.mjs tests/video-upload-provider.test.ts",
+    "test": "tsx --test --test-concurrency=2 tests/financial.test.ts tests/bidding-policy.test.ts tests/inventory.test.ts tests/audit.test.ts tests/media.test.ts tests/video-pricing.test.ts tests/audio.test.ts tests/api-client.test.ts tests/db-recovery.test.ts tests/release-migration.test.mjs tests/video-upload-provider.test.ts tests/live-isolation.test.mjs tests/auth-provider.test.ts",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
     "test:visual": "node scripts/visual-check.mjs",

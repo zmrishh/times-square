@@ -2,25 +2,7 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { Creative } from "@/lib/registry";
 import { renderCreative } from "@/lib/creative-renderer";
-export async function api<T = Record<string, unknown>>(
-  path: string,
-  body?: unknown,
-): Promise<T> {
-  const r = await fetch(
-    `/api/${path}`,
-    body === undefined
-      ? { cache: "no-store", signal: AbortSignal.timeout(30000) }
-      : {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(30000),
-        },
-  );
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error || "Please try again.");
-  return d;
-}
+export { api } from "@/lib/api-client";
 export type Brand = {
   id: string;
   name: string;

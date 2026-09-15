@@ -1,0 +1,36 @@
+/* Google light-theme button; official logo from developers.google.com/identity/branding-guidelines. */
+.button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  margin: 12px 0;
+  padding: 12px 36px;
+  border: 1px solid #747775;
+  border-radius: 24px;
+  background: #fff;
+  color: #1f1f1f;
+  font-family: var(--font-google-sans), Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  transition: box-shadow 160ms ease, background-color 160ms ease;
+}
+.logo {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  background: #fff url('/google-g.png') center / contain no-repeat;
+}
+.button:hover:not(:disabled) {
+  background: #f8faff;
+  box-shadow: 0 1px 3px #3c404326, 0 2px 6px #3c404314;
+}
+.button:focus-visible { outline: 3px solid #4285f4; outline-offset: 3px; }
+.button:active:not(:disabled) { background: #e8f0fe; box-shadow: none; }
+.button:disabled { cursor: wait; opacity: .65; }
+.spinner { position: absolute; right: 12px; }
+@media (prefers-reduced-motion: reduce) { .button { transition: none; } }

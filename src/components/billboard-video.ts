@@ -23,7 +23,7 @@ export function useBillboardVideo(
     texture: THREE.VideoTexture;
     src: string;
   } | null>(null);
-  const sample = useRef(0);
+  const sample = useRef(0.5);
   const resources=useRef<{video:HTMLVideoElement;source?:MediaElementAudioSourceNode;gain?:GainNode;pan?:StereoPannerNode;analyser?:AnalyserNode;wave?:Float32Array<ArrayBuffer>}|null>(null);
   const audible=useRef(false);
   const src = creative?.mode === "video" ? creative.image : "";
@@ -49,7 +49,7 @@ export function useBillboardVideo(
     const distance=billboardDistance(slot,[camera.position.x,camera.position.y,camera.position.z]);
     const media=resources.current,context=billboardAudioContext();
     if(media&&context) {
-      if(!media.source) {
+      if(!media.source && context.state === 'running') {
         media.source=context.createMediaElementSource(media.video);
         media.gain=context.createGain();media.gain.gain.value=0;
         media.pan=context.createStereoPanner();
@@ -57,13 +57,16 @@ export function useBillboardVideo(
         if(process.env.NODE_ENV!=='production') {media.analyser=context.createAnalyser();media.analyser.fftSize=256;media.wave=new Float32Array(256);media.pan.connect(media.analyser).connect(context.destination);}
         else media.pan.connect(context.destination);
         media.video.muted=false;
+        if (media.video.paused) void media.video.play().catch(() => {});
       }
+      if (media.gain && media.pan) {
       const gain=sound&&!paused&&!reduced&&!document.hidden&&audible.current ? proximityGain(distance) : 0;
       media.gain!.gain.setTargetAtTime(gain,context.currentTime,0.12);
       const s=slot.segments[0],dx=s.position[0]-camera.position.x,dz=s.position[2]-camera.position.z;
       const e=camera.matrixWorld.elements;
       media.pan!.pan.setTargetAtTime(Math.max(-0.8,Math.min(0.8,(dx*e[0]+dz*e[2])/Math.max(1,Math.hypot(dx,dz)))),context.currentTime,0.12);
       if(process.env.NODE_ENV!=='production') {media.video.dataset.audioGain=String(gain);media.video.dataset.audioDistance=String(distance);}
+      }
     }
     sample.current += delta;
     if (sample.current < 0.5) return;

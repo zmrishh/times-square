@@ -157,7 +157,13 @@ export async function moderate(
     );
   });
 }
-export async function publicSnapshot(): Promise<Snapshot> {
+let snapshotRead: Promise<Snapshot> | undefined;
+export function publicSnapshot(): Promise<Snapshot> {
+  // Share simultaneous public reads without caching completed/stale prices.
+  snapshotRead ??= readPublicSnapshot().finally(() => { snapshotRead = undefined; });
+  return snapshotRead;
+}
+async function readPublicSnapshot(): Promise<Snapshot> {
   const rows = await query<{
     id: string;
     version: number;

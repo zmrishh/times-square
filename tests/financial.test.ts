@@ -58,6 +58,15 @@ test("integer ranking policy and slot-local returning contribution", () => {
   assert.equal(nextMinimum(1100, 1000), 2100);
   assert.equal(nextMinimum(2100, 1000), 3100);
   assert.equal(nextMinimum(10000, 1000, "double"), 20000);
+  for (const preset of ['quarter', 'double']) {
+    assert.equal(nextMinimum(0, 5000, preset), 5000);
+    for (const leader of [1, 100, 999, 1000, 1001, 5000, 10000]) {
+      const minimum = nextMinimum(leader, 100, preset);
+      assert.ok(minimum - leader >= 1000, `${preset} must always increase ranking by at least $10`);
+      assert.throws(() => quoteAmount(leader, 0, 100, minimum - 1, preset), /Target/);
+      assert.equal(quoteAmount(leader, 0, 100, minimum, preset).target, minimum);
+    }
+  }
   assert.deepEqual(quoteAmount(10000, 4000, 1000, 12500).due, 8500);
   assert.equal(quoteAmount(10000, 0, 1000).due, 11000);
   for (const invalid of [NaN, Infinity, -1, 12500.1, 100, 1000001])
