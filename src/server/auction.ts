@@ -3,6 +3,7 @@ import { Account, rate } from "./auth";
 import { mode, required } from "./config";
 import { RULES } from "../lib/rules";
 import { placementQuote, videoCredit } from './media-pricing';
+import { auctionWindow, requireOpenAuction } from './auction-window';
 export type Order = Row & {
   id: string;
   account_id: string;
@@ -56,6 +57,7 @@ export async function reserve(
 ) {
   const paymentMode = mode();
   return tx(async (db) => {
+    const auction = await requireOpenAuction(db);
     const current = await one<{ suspended: boolean }>(
       db,
       "SELECT suspended FROM accounts WHERE id=$1",
@@ -122,15 +124,15 @@ export async function reserve(
         quote.existing,
         quote.target,
         quote.due,
-        JSON.stringify({ ...RULES, ...quote }),
+        JSON.stringify({ ...RULES, ...quote, auctionEndsAt: auction.endsAt }),
         paymentMode,
         paymentMode === "simulation"
           ? "simulation-product"
           : required("DODO_PRODUCT_ID"),
         paymentMode === "simulation" ? "local" : required("DODO_BUSINESS_ID"),
         a.email,
-        new Date(Date.now() + RULES.reservationMs),
-        new Date(Date.now() + RULES.reservationMs + RULES.graceMs),
+        new Date(Math.min(Date.now() + RULES.reservationMs, Date.parse(auction.endsAt))),
+        new Date(Math.min(Date.now() + RULES.reservationMs + RULES.graceMs, Date.parse(auction.endsAt))),
         quote.videoFee,
       ],
     );
@@ -150,7 +152,11 @@ export async function recompute(
   slotId: string,
   kind: string,
   paymentId: string | null = null,
+  admittedAuction?: Awaited<ReturnType<typeof auctionWindow>>,
 ) {
+  // A payment admitted before the cutoff completes under the same lock, even
+  // if its transaction crosses zero. Closing then captures its new leader.
+  const auction = admittedAuction ?? await auctionWindow(db);
   await db.query(
     `UPDATE totals t SET amount=COALESCE((SELECT SUM(a.amount) FROM allocations a JOIN payments p ON p.id=a.payment_id WHERE a.slot_id=t.slot_id AND a.brand_id=t.brand_id AND p.disputed=false),0) WHERE t.slot_id=$1`,
     [slotId],
@@ -161,8 +167,8 @@ export async function recompute(
     amount: number;
   }>(
     db,
-    `SELECT t.brand_id,t.creative_id,t.amount FROM totals t JOIN brands b ON b.id=t.brand_id JOIN accounts a ON a.id=b.account_id JOIN creatives c ON c.id=t.creative_id WHERE t.slot_id=$1 AND t.amount>0 AND NOT b.suspended AND NOT a.suspended AND c.status='approved' ORDER BY t.amount DESC,t.updated_at ASC,t.brand_id ASC LIMIT 1`,
-    [slotId],
+    `SELECT t.brand_id,t.creative_id,t.amount FROM totals t JOIN brands b ON b.id=t.brand_id JOIN accounts a ON a.id=b.account_id JOIN creatives c ON c.id=t.creative_id WHERE t.slot_id=$1 AND t.amount>0 AND NOT b.suspended AND NOT a.suspended AND c.status='approved' AND ($2::boolean=false OR t.brand_id=$3) ORDER BY t.amount DESC,t.updated_at ASC,t.brand_id ASC LIMIT 1`,
+    [slotId, auction.closed, auction.winners?.[slotId] ?? null],
   );
   if(winner) {
     const creative=await one<{mode:string;fallback_creative_id:string;fallback_status:string}>(db,
@@ -301,7 +307,9 @@ export async function applyEvidence(e: PaymentEvidence) {
     const prior = await one(db, "SELECT id FROM payments WHERE order_id=$1", [
       o.id,
     ]);
+    const auction = await auctionWindow(db);
     const valid =
+      !auction.closed &&
       evidenceMatches(o, e) &&
       o.reserved &&
       new Date(o.cutoff_at).getTime() >= Date.now() &&
@@ -339,7 +347,7 @@ export async function applyEvidence(e: PaymentEvidence) {
         [o.slot_id, o.brand_id, 0, o.creative_id],
       );
       await db.query(`UPDATE totals t SET fallback_creative_id=$3 FROM creatives c WHERE t.slot_id=$1 AND t.brand_id=$2 AND c.id=$3 AND c.data->>'mode'<>'video'`,[o.slot_id,o.brand_id,o.creative_id]);
-      await recompute(db, o.slot_id, o.due === o.video_fee ? "video-upgrade" : "takeover", e.id);
+      await recompute(db, o.slot_id, o.due === o.video_fee ? "video-upgrade" : "takeover", e.id, auction);
       await audit(db, null, "payment.applied", e.id, {
         orderId: o.id,
         principal: o.due,

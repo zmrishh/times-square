@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { EntranceMusic } from "@/components/entrance-music";
 import { Geist, Geist_Mono, Pinyon_Script, Bodoni_Moda, Google_Sans } from "next/font/google";
 import "./globals.css";
@@ -38,7 +39,7 @@ const welcomeSerif = Bodoni_Moda({
 export const metadata: Metadata = {
   title: "Paper Square — Virtual Times Square billboards from $10",
   description:
-    "Your brand on a virtual Times Square billboard. From $10. Choose your spot, add your artwork, pay once, and stay until outbid.",
+    "Seven days to bid on a virtual Times Square billboard. From $10. When the countdown ends, the highest bidder on each billboard stays forever.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -47,7 +48,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geist.variable} ${geistMono.variable} ${welcomeScript.variable} ${welcomeSerif.variable} ${googleSans.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col"><EntranceMusic />{children}</body>
+      <body className="min-h-full flex flex-col"><EntranceMusic />{children}<Analytics /></body>
     </html>
   );
 }

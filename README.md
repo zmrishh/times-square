@@ -19,6 +19,8 @@ Copy `.env.example` to `.env.local` to change configuration. Keep `APP_ORIGIN` e
 
 ## Implemented behavior
 
+- One shared seven-day auction starts with the first request after this release goes live. The database stores the deadline once; reloads, restarts and redeployments preserve it. At the cutoff, each billboard's eligible paid leader wins permanently. Unclaimed slots stay unclaimed. New quotes and bids close, late payments enter the refund workflow, and later refunds or moderation never promote a runner-up. The winner may still edit eligible artwork. The public snapshot and worker finalize the saved winner map under the same transaction lock as payments.
+
 - Actual 3D facades, red TKTS steps, One Times Square's sign tower, Marquis/Astor/1540 silhouettes, collision-bounded walking, cursor drag, explicit pointer lock, wheel zoom, tour, reduced motion and mobile joystick. HTML directory and purchase flow work without WebGL.
 - Seventy-two stable deep links, occlusion-aware picking, paid artwork, live placement preview, continuous textures across both wraparound displays, searchable sponsor directory, history, sharing and an actual-scene downloadable postcard.
 - Anonymous drafts survive authentication. Static PNG/JPEG/WebP uploads are limited to 5 MiB, 64–6000 pixels per side and 16 MP; derivatives are at most 2048 pixels, metadata stripped. Validated immutable creative versions are ready for checkout immediately, without manual approval. Uploaded artwork stays private until displayed on a paid placement.

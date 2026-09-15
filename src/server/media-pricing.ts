@@ -1,5 +1,6 @@
 import { DB, one } from './db';
 import { mediaPrice, quoteAmount, RULES } from '../lib/rules';
+import { requireOpenAuction } from './auction-window';
 
 /** Net format payments are isolated to a brand and placement. Older paid video
  * allocations are grandfathered; their immutable quotes are never repriced. */
@@ -13,6 +14,7 @@ export async function videoCredit(db: DB, slotId: string, brandId: string) {
   return Number(r.credit);
 }
 export async function placementQuote(db: DB, creativeId:string, accountId:string, slotId:string, target?:number) {
+  await requireOpenAuction(db);
   const c=await one<{brand_id:string;mode:string}>(db,`SELECT c.brand_id,c.data->>'mode' AS mode FROM creatives c JOIN brands b ON b.id=c.brand_id JOIN accounts a ON a.id=b.account_id
     WHERE c.id=$1 AND b.account_id=$2 AND c.status='approved' AND NOT b.suspended AND NOT a.suspended`,[creativeId,accountId]);
   if(!c) throw new Error('A saved, valid creative is required.');

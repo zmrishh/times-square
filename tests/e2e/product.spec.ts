@@ -189,7 +189,7 @@ test("mobile panels, directory fallback, focus and browser navigation", async ({
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await page.getByRole("button", { name: /Get a billboard/ }).click();
+  await page.getByRole("button", { name: /Bid from \$10/ }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.getByLabel("Search directory").fill("crown");
   await page

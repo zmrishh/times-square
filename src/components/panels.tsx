@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Creative, money, SLOTS, Snapshot } from "@/lib/registry";
 import { RULES } from '@/lib/rules';
+import { useAuctionClosed } from './auction-countdown';
 import { api, Art, Brand, Me, MyOrder } from "./ui";
 export function AccountPanel({
   me,
@@ -30,6 +31,7 @@ export function AccountPanel({
   onSelect: (id: string) => void;
   onOrder: (o: MyOrder) => void;
 }) {
+  const auctionClosed = useAuctionClosed(snapshot?.auction);
   return (
     <>
       <div className="section-heading">
@@ -67,7 +69,7 @@ export function AccountPanel({
             <p>{b.data.tagline}</p>
             <button className="text-link" onClick={() => onEdit(b)}>
               {b.status === "approved"
-                ? "Choose a placement"
+                ? auctionClosed ? "Edit artwork" : "Choose a placement"
                 : "Edit & continue"}
               <ArrowRight size={14} />
             </button>
@@ -87,7 +89,7 @@ export function AccountPanel({
             <span className="status">
               {snapshot?.slots.find((s) => s.id === t.slot_id)?.brandId ===
               t.brand_id
-                ? "Currently displayed"
+                ? auctionClosed ? "Permanent winner" : "Currently displayed"
                 : t.amount > 0
                   ? "Displaced"
                   : "No eligible principal"}
@@ -97,7 +99,7 @@ export function AccountPanel({
             Applied total: <b>{money(t.amount)}</b>
           </p>
           <button className="quiet" onClick={() => onSelect(t.slot_id)}>
-            View, share or take the lead <ArrowRight size={14} />
+            {auctionClosed ? 'View billboard' : 'View, share or take the lead'} <ArrowRight size={14} />
           </button>
         </div>
       ))}
@@ -212,16 +214,17 @@ export function AccountPanel({
 }
 export function HowItWorks({ onChoose, onRules }: { onChoose: () => void; onRules: () => void }) {
   return <div className="rules how-it-works">
-    <p className="panel-intro">Your brand on a virtual Times Square billboard. From $10.</p>
+    <p className="panel-intro">Seven days to bid. A place in the square forever. From $10.</p>
     {[
       ['Choose a billboard', 'Explore the square and pick your spot. Each billboard shows its current price.'],
       ['Add your artwork', 'Upload an image or video, add your website, and preview it on the billboard.'],
-      ['Pay', 'Review the total and pay securely. Your artwork goes live after payment is confirmed.'],
-      ['Stay until outbid', 'Your brand stays on that billboard until another advertiser takes the lead. A takeover requires at least $10 more in total contributions to that billboard.'],
+      ['Bid before the countdown ends', 'All billboards share one seven-day bidding window from launch. Pay securely and your artwork goes live after payment is verified. To take the lead, your paid total on that billboard must be at least $10 higher.'],
+      ['Win your place forever', 'When the countdown reaches zero, bidding closes. The highest eligible bidder on each billboard stays there forever. No new bids, no next round.'],
     ].map(([heading, body], i) => <div className="rule-number" key={heading}>
       <span>0{i + 1}</span><div><h3>{heading}</h3><p>{body}</p></div>
     </div>)}
-    <p className="fine">One-time payment. Video costs 50% more; applicable tax is shown at checkout. No minimum display time is guaranteed. Being outbid does not automatically trigger a refund. Placements may be removed under the content rules.</p>
+    <p className="fine">Why seven days? A short window to compete, then a lasting place for the brands that made their mark. This is advertising on our virtual square.</p>
+    <p className="fine">One-time payments. Video costs 50% more; applicable tax is shown at checkout. Only payments verified and applied before the deadline count. You can be outbid during the seven days; being outbid does not automatically trigger a refund. Content rules and payment eligibility still apply to permanent winners.</p>
     <button className="primary full" onClick={onChoose}>Choose a billboard <ArrowRight size={16} /></button>
     <button className="text-link detailed-rules-link" onClick={onRules}>Read the detailed rules & privacy policy <ArrowUpRight size={14} /></button>
   </div>;
@@ -236,7 +239,7 @@ export function Rules({ support, paymentMode }: { support: string; paymentMode?:
       {[
         [
           "Pick your place",
-          "Every billboard has its own cumulative paid ranking: your eligible contributions to that billboard. The eligible brand with the highest total is displayed there. Opening prices start at $10 for small placements, $25 for standard and $50 for premium. Each billboard shows its current price.",
+          "Every billboard has its own cumulative paid ranking: your eligible contributions to that billboard. All billboards share a seven-day countdown from launch. The eligible brand with the highest total is displayed during bidding and wins that billboard permanently when the countdown ends. Opening prices start at $10 for small placements, $25 for standard and $50 for premium.",
         ],
         [
           "Make it yours",
@@ -247,8 +250,8 @@ export function Rules({ support, paymentMode }: { support: string; paymentMode?:
           "A takeover requires at least $10 more than the current ranking. The exact minimum is shown before checkout and may be higher. Price changes apply to new quotes only. Video adds a separate 50% format fee. A leader cannot outbid itself, but may pay to upgrade an image to video. There is no wallet, transferable balance, subscription, automatic rebid, withdrawal, payout, resale or prize.",
         ],
         [
-          "Stay until the next big idea",
-          "Placement begins only after verified payment is applied. It continues until outbid or removed under these rules. No minimum display time, visits, clicks, conversions or revenue are guaranteed. Being outbid does not automatically refund a successfully delivered placement. Displaced brands remain discoverable with their applied totals available for later takeovers.",
+          "Seven days to bid. Stay forever.",
+          "Placement begins only after verified payment is applied. During the seven-day window, a higher paid total can take the lead. At the deadline, each billboard locks its current eligible winner permanently; unclaimed billboards stay unclaimed. There is no next round. Winners may update eligible artwork. Content violations, refunds or disputes can remove a placement, but never reopen bidding or promote a runner-up. Visits, clicks, conversions and revenue are not guaranteed. Being outbid does not automatically refund a delivered placement; displaced brands remain in the directory.",
         ],
       ].map(([heading, body], i) => (
         <div className="rule-number" key={heading}>
@@ -274,8 +277,11 @@ export function Rules({ support, paymentMode }: { support: string; paymentMode?:
       ))}
       <h3>Reservations, payment errors & refunds</h3>
       <p>
-        One checkout reserves a billboard for 10 minutes, plus a 2-minute
-        settlement grace period. Existing artwork stays visible. The server
+        One checkout reserves a billboard for up to 10 minutes, plus a 2-minute
+        settlement grace period. Both end at the auction deadline, even if checkout is already open.
+        Payment must be verified and applied before the countdown reaches zero.
+        Late payments enter the full refund workflow and cannot change a winner.
+        Existing artwork stays visible. The server
         reconciles the provider before releasing an expired reservation. A stale
         or mismatched payment that cannot deliver its promised placement enters
         a full refund workflow, including applicable buyer-paid tax. Refund

@@ -15,7 +15,7 @@ export async function generateMetadata({
   const brand = process.env.NEXT_PUBLIC_APP_NAME || 'Paper Square';
   if (!slot) {
     const title = `${brand} — Virtual Times Square billboards from $10`;
-    const description = 'Your brand on a virtual Times Square billboard. From $10. Choose your spot, add your artwork, pay once, and stay until outbid.';
+    const description = 'Seven days to bid on a virtual Times Square billboard. From $10. When the countdown ends, the highest bidder on each billboard stays forever.';
     const image = { url: `${base}/social/city-preview.png`, width: 1200, height: 630,
       alt: 'The illustrated Paper Square city, with colorful virtual billboards lining Times Square.' };
     return {

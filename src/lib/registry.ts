@@ -1119,6 +1119,7 @@ export type PublicSlot = {
   }[];
 };
 export type Snapshot = {
+  auction?: import('./auction-window').AuctionWindow;
   version: number;
   slots: PublicSlot[];
   directory: {

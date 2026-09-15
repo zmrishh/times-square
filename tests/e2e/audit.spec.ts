@@ -78,9 +78,9 @@ for (const width of [360,390,768,1366,1920]) test(`visual and accessibility audi
   }
   await capture("square");
   for(const name of ["Directory","Map","Rules"]) {
-    if (name === "Directory") await page.getByRole("button",{name:/Get a billboard/}).click();
+    if (name === "Directory") await page.getByRole("button",{name:/Bid from \$10/}).click();
     else {
-      await page.getByRole("button",{name:/Get a billboard/}).click();
+      await page.getByRole("button",{name:/Bid from \$10/}).click();
       await page.getByRole("button",{name:name === "Rules" ? /Rules & privacy/ : "View placement map"}).click();
     }
     await capture(name.toLowerCase());

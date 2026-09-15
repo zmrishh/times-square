@@ -1,5 +1,6 @@
 import { query, tx, one, job, Row } from "./db";
 import { Order } from "./auction";
+import { auctionWindow } from './auction-window';
 import { reconcileOrder, reconcilePayment, processRefund } from "./payments";
 import { cleanupVideos,removeVideoKeys } from './video-uploads';
 type Job = Row & {
@@ -9,6 +10,7 @@ type Job = Row & {
   attempts: number;
 };
 export async function runJobs(limit = 20) {
+  await tx(auctionWindow);
   const started = Date.now();
   await tx(db=>job(db,`media-expiry:${Math.floor(Date.now()/3600000)}`,'media-expiry',{}));
   const due = await query<Order>(

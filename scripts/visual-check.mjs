@@ -40,7 +40,7 @@ await page.setViewportSize({ width: 390, height: 844 });
 await page.goto("http://localhost:3000", { waitUntil: "networkidle" });
 await page.waitForTimeout(1500);
 await page.screenshot({ path: "artifacts/mobile-square.png" });
-await page.getByRole("button", { name: /Get a billboard/ }).click();
+await page.getByRole("button", { name: /Bid from \$10/ }).click();
 await page.waitForTimeout(600);
 await page.screenshot({ path: "artifacts/mobile-directory.png" });
 await page.setViewportSize({ width: 1440, height: 960 });

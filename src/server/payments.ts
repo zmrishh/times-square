@@ -1,6 +1,7 @@
 import DodoPayments from "dodopayments";
 import { mode, origin, required } from "./config";
 import { query, tx, one, job, Row } from "./db";
+import { requireOpenAuction } from './auction-window';
 import {
   Order,
   PaymentEvidence,
@@ -25,6 +26,7 @@ export async function startCheckout(orderId: string) {
       orderId,
     ]);
     if (o.state !== "reserved") return null;
+    await requireOpenAuction(db);
     await db.query("UPDATE orders SET state='initializing' WHERE id=$1", [
       orderId,
     ]);

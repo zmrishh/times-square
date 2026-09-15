@@ -5,6 +5,7 @@ import { Account } from "./auth";
 import { mode } from "./config";
 import { recompute, publish } from "./auction";
 import { videoCredit } from './media-pricing';
+import { auctionWindow } from './auction-window';
 const url = z
   .string()
   .max(500)
@@ -164,6 +165,8 @@ export function publicSnapshot(): Promise<Snapshot> {
   return snapshotRead;
 }
 async function readPublicSnapshot(): Promise<Snapshot> {
+  const window = await tx(auctionWindow);
+  const auction = { startsAt: window.startsAt, endsAt: window.endsAt, serverNow: window.serverNow, closed: window.closed };
   const rows = await query<{
     id: string;
     version: number;
@@ -223,6 +226,7 @@ async function readPublicSnapshot(): Promise<Snapshot> {
   )[0].value;
   return {
     version: settings.version,
+    auction,
     slots,
     directory: directory.map((d) => ({
       id: d.id,

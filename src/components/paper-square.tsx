@@ -53,6 +53,7 @@ import type { SceneCommand } from "./square-scene";
 import { Art, api, Me, emptyMe, IconButton } from "./ui";
 import { CreativeEditor } from "./creative-editor";
 import { WelcomeOverlay } from "./welcome-overlay";
+import { AuctionCountdown, useAuctionClosed } from './auction-countdown';
 import googleButton from './google-sign-in.module.css';
 import { AdminPanel, Rules, HowItWorks, AccountPanel } from "./panels";
 const Scene = dynamic(() => import("./square-scene"), { ssr: false });
@@ -131,6 +132,7 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
     [afterAuth, setAfterAuth] = useState<Panel>("account"),
     [checkout, setCheckout] = useState<Checkout | null>(null),
     [report, setReport] = useState("");
+  const auctionClosed = useAuctionClosed(snapshot?.auction);
   const [locked, setLocked] = useState(false);
   const [syncError, setSyncError] = useState("");
   const [checkoutSyncError, setCheckoutSyncError] = useState("");
@@ -539,7 +541,7 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
             How it works <ArrowUpRight size={14} />
           </button>
           <div className="header-offer">
-          <p>Your brand on a virtual Times Square billboard. <strong>From $10.</strong></p>
+          <AuctionCountdown auction={snapshot?.auction} />
           <button
             className="primary header-cta"
             onClick={() => {
@@ -548,7 +550,7 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
               open("directory");
             }}
           >
-            Get a billboard <ArrowUpRight size={16} />
+            {auctionClosed ? 'View billboards' : 'Bid from $10'} <ArrowUpRight size={16} />
           </button>
           </div>
           <IconButton
@@ -647,7 +649,7 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
             <em>Big presence.</em>
           </h1>
           <p>
-            Your brand on a virtual Times Square billboard. <strong>From $10.</strong>
+            {auctionClosed ? 'The bids are in. Meet the brands that made their mark.' : <>Seven days to bid on a virtual Times Square billboard. <strong>Highest bidder stays forever.</strong></>}
           </p>
           <button
             className="intro-link"
@@ -692,12 +694,12 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
         <div className="billboard-tooltip">
           <span className="eyebrow">
             {hovered.id.toUpperCase()} ·{" "}
-            {hoverState?.creative ? "ON THE BILLBOARD" : "AVAILABLE TO CLAIM"}
+            {hoverState?.creative ? auctionClosed ? "PERMANENT WINNER" : "ON THE BILLBOARD" : auctionClosed ? "BIDDING CLOSED" : "AVAILABLE TO CLAIM"}
           </span>
           <strong>{hoverState?.creative?.name || hovered.name}</strong>
           <span>{hoverState?.creative?.tagline || hovered.location}</span>
           <div>
-            {hoverState?.total
+            {auctionClosed ? hoverState?.total ? `Final ranking ${money(hoverState.total)}` : 'Unclaimed' : hoverState?.total
               ? `Leading at ${money(hoverState.total)}`
               : `Claim from ${money(hoverState?.opening || hovered.opening)}`}
             <ArrowUpRight size={16} />
@@ -935,10 +937,10 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
                     </>
                   ) : (
                     <div className="empty-placement">
-                      <span className="pill">{DEMO_BILLBOARDS[slot.id] ? 'VIDEO DEMO · AVAILABLE TO BUY' : 'HOUSE ART · AVAILABLE'}</span>
-                      <h3>A big canvas for your next big thing.</h3>
+                      <span className="pill">{auctionClosed ? 'BIDDING CLOSED · UNCLAIMED' : DEMO_BILLBOARDS[slot.id] ? 'VIDEO DEMO · AVAILABLE TO BUY' : 'HOUSE ART · AVAILABLE'}</span>
+                      <h3>{auctionClosed ? 'This billboard remains part of the square.' : 'A big canvas for your next big thing.'}</h3>
                       <p>
-                        {DEMO_BILLBOARDS[slot.id] ? 'This preview clip demonstrates video advertising. It is not a paid sponsorship. Buy this placement to replace the demo with your own creative.' : 'This original house artwork is keeping your spot warm. Preview your brand right here in the square.'}
+                        {auctionClosed ? 'No bidder claimed this billboard before the countdown ended.' : DEMO_BILLBOARDS[slot.id] ? 'This preview clip demonstrates video advertising. It is not a paid sponsorship. Bid on this placement to replace the demo with your own creative.' : 'This original house artwork is keeping your spot warm. Preview your brand right here in the square.'}
                       </p>
                       {DEMO_BILLBOARDS[slot.id] && <button className="quiet" onClick={()=>{open(null);cmd('walk',slot.id);if(!sound)toggleSound();}}>Walk closer to hear this demo <Volume2 size={15}/></button>}
                     </div>
@@ -947,14 +949,14 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
                     <div>
                       <span>
                         {state?.total
-                          ? "Current paid ranking"
+                          ? auctionClosed ? "Final paid ranking" : "Current paid ranking"
                           : "Opening ranking"}
                       </span>
                       <strong>
                         {money(state?.total || state?.opening || slot.opening)}
                       </strong>
                     </div>
-                    <div>
+                    {!auctionClosed && <div>
                       <span>Next minimum ranking</span>
                       <strong>
                         {money(
@@ -965,10 +967,10 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
                           ),
                         )}
                       </strong>
-                    </div>
+                    </div>}
                   </div>
-                  <p className="media-pricing">Image {money(nextMinimum(state?.total||0,state?.opening||slot.opening,snapshot?.preset))} · Video {money(videoPrice(nextMinimum(state?.total||0,state?.opening||slot.opening,snapshot?.preset)))} before tax. Returning credits apply at checkout.</p>
-                  {state?.reserved && (
+                  {!auctionClosed && <p className="media-pricing">Image {money(nextMinimum(state?.total||0,state?.opening||slot.opening,snapshot?.preset))} · Video {money(videoPrice(nextMinimum(state?.total||0,state?.opening||slot.opening,snapshot?.preset)))} before tax. Returning credits apply at checkout.</p>}
+                  {!auctionClosed && state?.reserved && (
                     <div className="notice">
                       <Clock size={16} />
                       Another checkout is being resolved. The current artwork
@@ -977,13 +979,13 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
                   )}
                   <button
                     className="primary full"
-                    disabled={state?.available === false || state?.reserved}
+                    disabled={auctionClosed || state?.available === false || state?.reserved}
                     onClick={() => {
                       setApprovedId("");
                       editor();
                     }}
                   >
-                    {state?.available === false
+                    {auctionClosed ? state?.brandId ? "Permanent winner" : "Bidding closed" : state?.available === false
                       ? "Unavailable"
                       : state?.brandId
                         ? "Outbid this brand"
@@ -991,8 +993,8 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
                     <ArrowUpRight size={17} />
                   </button>
                   <p className="fine">
-                    One payment. Featured until outbid. Virtual advertising on
-                    this website only.
+                    Seven days to bid. The highest bidder on each billboard stays forever.
+                    Virtual advertising on this website only. Content rules apply.
                   </p>
                   <div className="button-row">
                     <button
@@ -1040,7 +1042,7 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
                   )}
                   <p className="fine">
                     Outbid brands stay in the directory. Their applied spending
-                    on this billboard counts toward a later takeover. No
+                    on this billboard counts toward another bid before the countdown ends. No
                     automatic refund for being outbid.
                   </p>
                   <button className="quiet" onClick={() => open("report")}>
@@ -1206,7 +1208,7 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
                             <span>{s.location}</span>
                             <div className="card-bottom">
                               <span>
-                                {st?.available === false
+                                {auctionClosed ? st?.creative?.name || 'Unclaimed · closed' : st?.available === false
                                   ? "Unavailable"
                                   : st?.brandId
                                     ? st.creative?.name
@@ -1215,7 +1217,7 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
                               <b>
                                 {money(st?.total || st?.opening || s.opening)}
                                 <small>
-                                  {st?.total ? " leading" : " to start"}
+                                  {auctionClosed ? st?.total ? " final" : " unclaimed" : st?.total ? " leading" : " to start"}
                                 </small>
                               </b>
                             </div>
@@ -1666,7 +1668,7 @@ export default function PaperSquare({ initialSnapshot = null }: { initialSnapsho
                     <>
                       <p className="panel-intro">
                         {checkout?.state === "delivered"
-                          ? "Your payment was applied and the placement delivered. It remains featured until another eligible brand takes the lead."
+                          ? "Your payment was applied and the placement delivered. When the seven-day countdown ends, the highest bidder on each billboard stays forever. Content rules apply."
                           : checkout?.state === "refund_pending"
                             ? "This payment could not deliver its promised placement. A full refund is queued. Follow its confirmed status here."
                             : checkout?.state === "refunded"

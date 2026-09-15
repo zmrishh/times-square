@@ -31,6 +31,7 @@ import { videoPoster } from "@/lib/video-poster";
 import { uploadVideo } from '@/lib/upload-video';
 import { nextMinimum,videoPrice } from '@/lib/rules';
 import { api, Art, Me } from "./ui";
+import { useAuctionClosed } from './auction-countdown';
 type Props = {
   slot: Slot;
   snapshot: Snapshot | null;
@@ -54,6 +55,7 @@ type Props = {
   }) => void;
 };
 export function CreativeEditor(p: Props) {
+  const auctionClosed = useAuctionClosed(p.snapshot?.auction);
   const { slot, creative: c, me } = p;
   const format = placementFormat(slot);
   const video = c.mode === "video";
@@ -112,7 +114,7 @@ export function CreativeEditor(p: Props) {
     return () => clearTimeout(timer);
   }, [c, slot.id, p.brandId]);
   useEffect(() => {
-    if (!p.approvedId) return;
+    if (!p.approvedId || auctionClosed) return;
     let live = true;
     const t = setTimeout(() => {
       void api<{
@@ -146,7 +148,7 @@ export function CreativeEditor(p: Props) {
       live = false;
       clearTimeout(t);
     };
-  }, [p.approvedId, slot.id, target, p.snapshot?.version, isLeading, quoteKey]);
+  }, [p.approvedId, slot.id, target, p.snapshot?.version, isLeading, quoteKey, auctionClosed]);
   useEffect(() => {
     if (p.approvedId || error)
       checkoutRef.current?.scrollIntoView({ block: "start" });
@@ -460,7 +462,7 @@ export function CreativeEditor(p: Props) {
             {error}
           </div>
         )}
-        {!p.approvedId ? (
+        {auctionClosed && !isLeading ? <div className="notice">Bidding has ended. The highest bidders now hold their billboards permanently.</div> : !p.approvedId ? (
           <>
             <div className="notice">
               <CheckCircle2 size={18} />
@@ -503,14 +505,14 @@ export function CreativeEditor(p: Props) {
               )}{" "}
               {me.account
                 ? isLeading
-                  ? "Review changes"
+                  ? auctionClosed ? "Save artwork" : "Review changes"
                   : "Continue to payment"
                 : "Sign in to continue"}
               <ArrowRight size={17} />
             </button>
             <span className="save-note">{saved}</span>
           </>
-        ) : isLeading && price?.due === 0 ? (
+        ) : isLeading && (auctionClosed || price?.due === 0) ? (
           <div className="notice">
             <CheckCircle2 size={18} />
             <span>
@@ -580,7 +582,7 @@ export function CreativeEditor(p: Props) {
                 your ad on physical Times Square screens.
               </p>
               <p>
-                Featured until outbid or removed under the rules.{" "}
+                Bidding runs for seven days from launch. The highest eligible paid total on each billboard at the deadline stays forever, subject to the content rules. Payment must be verified and applied before the countdown ends; late payments enter the refund workflow.{" "}
                 <strong>
                   No minimum display time, visits, clicks or results are
                   guaranteed.
